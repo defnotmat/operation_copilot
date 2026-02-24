@@ -1,0 +1,72 @@
+[
+  {
+    "id": "KB_PLAN_PRO_OVERVIEW",
+    "title": "Pro Plan Features and Limits",
+    "text": "The Pro plan includes core analytics and dashboard features. It supports manual exports up to 200MB per file. The Pro plan does not include SAML SSO and does not include SCIM provisioning. Standard email support is included."
+  },
+  {
+    "id": "KB_PLAN_BUSINESS_OVERVIEW",
+    "title": "Business Plan Features",
+    "text": "The Business plan includes everything in Pro and adds support for larger exports and improved reliability for large jobs. It includes SAML SSO support and priority support. It may also provide higher API limits."
+  },
+  {
+    "id": "KB_FREE_TRIAL",
+    "title": "Free Trial Availability",
+    "text": "A 14-day free trial is available for new customers. The trial includes most Pro plan features. No credit card is required to start the trial."
+  },
+  {
+    "id": "KB_SSO_SAML_SUPPORT",
+    "title": "SAML SSO and Okta Support",
+    "text": "SAML SSO is supported on the Business plan and above. Okta is supported via standard SAML 2.0 configuration. Setup typically requires IdP metadata, an Assertion Consumer Service URL, and an Entity ID."
+  },
+  {
+    "id": "KB_SCIM_STATUS",
+    "title": "SCIM Provisioning Availability",
+    "text": "SCIM provisioning is not currently generally available. It is only available to selected enterprise customers. For most customers, SCIM is considered roadmap or limited availability. Customers can be notified when it becomes broadly available."
+  },
+  {
+    "id": "KB_DATA_RESIDENCY_EU",
+    "title": "EU Data Residency",
+    "text": "EU-only data residency is available on the Business plan and above. Data is stored and processed within EU regions. Existing customers may require a short migration process to enable EU residency."
+  },
+  {
+    "id": "KB_DATA_RESIDENCY_PRICING",
+    "title": "EU Residency Pricing Guidance",
+    "text": "EU data residency may involve additional cost depending on contract size. Exact pricing must be confirmed by Sales. Support agents must not provide specific pricing numbers."
+  },
+  {
+    "id": "KB_EXPORT_LIMITS",
+    "title": "Export Size Limits",
+    "text": "The Pro plan supports exports up to 200MB per file. Larger exports may fail or time out on Pro. The Business plan provides better support for large export workloads."
+  },
+  {
+    "id": "KB_EXPORT_FAILURE_CAUSES",
+    "title": "Common Causes of Export Failures",
+    "text": "Export failures can be caused by file size exceeding plan limits, temporary service degradation, network interruptions, or very large or complex queries."
+  },
+  {
+    "id": "KB_EXPORT_TROUBLESHOOTING",
+    "title": "Export Troubleshooting Information to Collect",
+    "text": "When troubleshooting export failures, support should ask for the workspace or account ID, approximate timestamp and timezone, export job ID if available, file size being exported, and whether the issue affects all users."
+  },
+  {
+    "id": "KB_EXPORT_WORKAROUNDS",
+    "title": "Export Workarounds and Recommendations",
+    "text": "If export size is the issue, suggest splitting the export into smaller files. Customers with large export workloads may benefit from upgrading to the Business plan."
+  },
+  {
+    "id": "KB_DASHBOARD_LOADING_CAUSES",
+    "title": "Dashboard Loading Issue Causes",
+    "text": "Dashboard loading problems can be caused by temporary backend incidents, very large datasets, browser caching issues, or network problems."
+  },
+  {
+    "id": "KB_DASHBOARD_TROUBLESHOOTING",
+    "title": "Dashboard Troubleshooting Steps",
+    "text": "First-line troubleshooting steps include refreshing the page, trying an incognito window, trying another browser, confirming whether multiple users are affected, and collecting the timestamp and workspace ID."
+  },
+  {
+    "id": "KB_SCHEDULED_EXPORTS_STATUS",
+    "title": "Scheduled Exports Feature Status",
+    "text": "Scheduled exports are not currently supported natively. Customers must run exports manually. The feature is commonly requested and under consideration. Support should not promise delivery dates."
+  }
+]

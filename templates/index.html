@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Extraction Pipeline Demo</title>
+  <link rel="stylesheet" href="/static/styles.css" />
+</head>
+<body>
+  <div class="bg-orb orb-a"></div>
+  <div class="bg-orb orb-b"></div>
+
+  <main class="page">
+    <header class="hero">
+      <p class="eyebrow">Operations Copilot</p>
+      <h1>Support Message Extraction Demo</h1>
+      <p class="sub">Select a request type, run the pipeline, and inspect each step with the final structured output.</p>
+    </header>
+
+    <section class="panel controls reveal">
+      <div class="control-row">
+        <label for="requestType">Request Type</label>
+        <select id="requestType"></select>
+      </div>
+      <button id="runBtn">Run Extraction Pipeline</button>
+    </section>
+
+    <section class="grid reveal-delay-1">
+      <article class="panel">
+        <h2>Selected Message</h2>
+        <div id="messageCard" class="message-card empty">Choose a request type to preview the message.</div>
+      </article>
+
+      <article class="panel">
+        <h2>Pipeline Logs</h2>
+        <div id="logs" class="logs"></div>
+      </article>
+
+      <article class="panel output-panel">
+        <h2>Extraction Output</h2>
+        <div id="output" class="output empty">No output yet.</div>
+      </article>
+    </section>
+  </main>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>

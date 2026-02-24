@@ -1,0 +1,10 @@
+{
+  "request_type": "bug_report | feature_request | question",
+  "priority": {
+    "level": "P0 | P1 | P2 | P3",
+    "rationale": "string"
+  },
+  "summary": "string",
+  "suggested_next_action": "string",
+  "missing_info_questions": ["string"]
+}
