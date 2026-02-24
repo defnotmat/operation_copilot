@@ -1,11 +1,10 @@
 import json
 import os
-import re
-from collections import Counter
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from flask import Flask, jsonify, render_template, request
+from chunk.chunk import format_manual_context, load_manual_json_chunks, retrieve_top_manual_chunks
 
 try:
     from openai import OpenAI
@@ -56,124 +55,10 @@ def load_json(path: Path) -> Any:
         return json.load(f)
 
 
-STOPWORDS = {
-    "for",
-    "with",
-    "that",
-    "this",
-    "from",
-    "your",
-    "are",
-    "our",
-    "you",
-    "can",
-    "not",
-    "but",
-    "have",
-    "has",
-    "was",
-    "were",
-    "will",
-    "what",
-    "when",
-    "where",
-    "how",
-    "why",
-    "about",
-    "into",
-    "they",
-    "their",
-    "them",
-    "than",
-    "then",
-    "there",
-    "here",
-    "would",
-    "should",
-    "could",
-    "please",
-}
-TOKEN_RE = re.compile(r"[a-z0-9]+")
-
-
-def tokenize(text: str) -> List[str]:
-    return [t for t in TOKEN_RE.findall(text.lower()) if len(t) > 2 and t not in STOPWORDS]
-
-
-def normalize_manual_chunks(raw: Any) -> List[Dict[str, str]]:
-    chunks: List[Dict[str, str]] = []
-
-    if isinstance(raw, list):
-        for idx, item in enumerate(raw, start=1):
-            if not isinstance(item, dict):
-                continue
-            text = str(item.get("text", "")).strip()
-            if not text:
-                continue
-            chunk_id = str(item.get("id") or f"CHUNK_{idx:03d}")
-            title = str(item.get("title", "")).strip()
-            chunks.append({"id": chunk_id, "title": title, "text": text})
-        return chunks
-
-    if isinstance(raw, dict):
-        for idx, (key, value) in enumerate(raw.items(), start=1):
-            if isinstance(value, dict):
-                text = str(value.get("text", "")).strip()
-                title = str(value.get("title", "")).strip()
-            else:
-                text = str(value).strip()
-                title = ""
-            if not text:
-                continue
-            chunk_id = str(key or f"CHUNK_{idx:03d}")
-            chunks.append({"id": chunk_id, "title": title, "text": text})
-        return chunks
-
-    return chunks
-
-
-def load_manual_json_chunks() -> List[Dict[str, str]]:
-    if not MANUAL_JSON_PATH.exists():
-        return []
-    return normalize_manual_chunks(load_json(MANUAL_JSON_PATH))
-
-
-def retrieve_top_manual_chunks(query: str, chunks: List[Dict[str, str]], top_k: int = 3) -> List[Dict[str, str]]:
-    if not chunks:
-        return []
-
-    query_tokens = tokenize(query)
-    if not query_tokens:
-        return chunks[:top_k]
-
-    query_counter = Counter(query_tokens)
-    scored: List[Any] = []
-
-    for idx, chunk in enumerate(chunks):
-        haystack = f"{chunk.get('id', '')} {chunk.get('title', '')} {chunk.get('text', '')}"
-        chunk_tokens = tokenize(haystack)
-        chunk_counter = Counter(chunk_tokens)
-
-        overlap = set(query_counter.keys()) & set(chunk_counter.keys())
-        if not overlap:
-            continue
-
-        overlap_score = sum(min(query_counter[t], chunk_counter[t]) for t in overlap)
-        breadth_bonus = len(overlap)
-        score = overlap_score + breadth_bonus
-        scored.append((score, idx, chunk))
-
-    if not scored:
-        return chunks[:top_k]
-
-    scored.sort(key=lambda x: (-x[0], x[1]))
-    return [entry[2] for entry in scored[:top_k]]
-
-
 EXTRACTION_SCHEMA = load_json(SCHEMA_PATH)
 SYSTEM_PROMPT = PROMPT_PATH.read_text(encoding="utf-8")
 MESSAGES_DB = load_json(MESSAGES_PATH)
-MANUAL_JSON_CHUNKS = load_manual_json_chunks()
+MANUAL_JSON_CHUNKS = load_manual_json_chunks(MANUAL_JSON_PATH)
 load_env_file()
 
 
@@ -244,19 +129,6 @@ def resolve_input(payload: Dict[str, Any]) -> Dict[str, Any]:
     if not found:
         raise ValueError("Could not resolve selected input. Send `id` (and optional `request_type`) or full message object.")
     return found
-
-
-def format_manual_context(chunks: List[Dict[str, str]]) -> str:
-    if not chunks:
-        return "No matching manual chunks found."
-
-    parts: List[str] = []
-    for chunk in chunks:
-        header = f"ID: {chunk.get('id', 'UNKNOWN')}"
-        if chunk.get("title"):
-            header += f" | Title: {chunk['title']}"
-        parts.append(f"{header}\n{chunk.get('text', '')}")
-    return "\n\n".join(parts)
 
 
 def build_extraction_prompt(selected_message: Dict[str, Any], schema: Dict[str, Any]) -> str:
@@ -351,7 +223,7 @@ def build_bug_ticket_entry(selected_message: Dict[str, Any], extraction: Dict[st
     message_id = str(selected_message.get("id", "unknown")).replace("_", "-").upper()
     return {
         "template": "internal_bug_ticket",
-        "ticket_id": f"BUG-{message_id}",
+        "ticket_id": f"{message_id}",
         "status": "New",
         "queue": "Support Engineering",
         "priority": priority.get("level", "P2"),
@@ -362,7 +234,7 @@ def build_bug_ticket_entry(selected_message: Dict[str, Any], extraction: Dict[st
         "customer_message": selected_message.get("message", ""),
         "triage_rationale": priority.get("rationale", "no information found"),
         "next_internal_action": extraction.get("suggested_next_action", "no information found"),
-        "missing_info_checklist": missing if isinstance(missing, list) else [],
+        "missing_info_checklist": missing if isinstance(missing, list) else "All information is present",
     }
 
 
@@ -372,7 +244,7 @@ def build_feature_task_sheet(selected_message: Dict[str, Any], extraction: Dict[
     message_id = str(selected_message.get("id", "unknown")).replace("_", "-").upper()
     return {
         "template": "product_feature_task_sheet",
-        "task_id": f"FEAT-{message_id}",
+        "task_id": f"{message_id}",
         "workspace": "Product Requests Board",
         "status": "Inbox",
         "owner_team": "Product Ops",
@@ -382,7 +254,7 @@ def build_feature_task_sheet(selected_message: Dict[str, Any], extraction: Dict[
         "source": selected_message.get("source", "unknown"),
         "problem_statement": selected_message.get("message", ""),
         "proposed_next_step": extraction.get("suggested_next_action", "no information found"),
-        "discovery_questions": missing if isinstance(missing, list) else [],
+        "discovery_questions": missing if isinstance(missing, list) else "All information is present",
         "tags": ["customer-feedback", str(selected_message.get("source", "unknown"))],
     }
 

@@ -140,14 +140,6 @@ function renderReplyOutcome(reply, manualChunks) {
         <p class="block-title">Grounded By</p>
         <div class="chunk-chip-wrap">${chunkBadges}</div>
       </div>
-      <div class="template-section">
-        <p class="block-title">Manual Chunks Used</p>
-        ${
-          Array.isArray(manualChunks) && manualChunks.length
-            ? `<ul class="missing-list">${manualChunks.map((chunk) => `<li><strong>${escapeHtml(chunk.id || "UNKNOWN")}</strong>${chunk.title ? ` - ${escapeHtml(chunk.title)}` : ""}</li>`).join("")}</ul>`
-            : "<p class=\"block-body\">No manual chunks loaded.</p>"
-        }
-      </div>
     </div>
   `;
 }
@@ -174,7 +166,6 @@ function renderOutput(data) {
     <div class="badges">
       <span class="badge">${escapeHtml(prettyLabel(requestType))}</span>
       <span class="badge">Priority ${escapeHtml(extraction.priority?.level || "-")}</span>
-      <span class="badge">Model ${escapeHtml(data.model || "-")}</span>
       <span class="badge">Outcome ${escapeHtml(prettyLabel(outcomeType))}</span>
     </div>
 
@@ -187,7 +178,6 @@ function renderOutput(data) {
       <p class="block-title">Extraction Summary</p>
       <p class="block-body"><strong>Summary:</strong> ${escapeHtml(extraction.summary || "no information found")}</p>
       <p class="block-body"><strong>Priority Rationale:</strong> ${escapeHtml(extraction.priority?.rationale || "no information found")}</p>
-      <p class="block-body"><strong>Suggested Next Action:</strong> ${escapeHtml(extraction.suggested_next_action || "no information found")}</p>
     </div>
 
     <div class="block">
