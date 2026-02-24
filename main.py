@@ -657,7 +657,8 @@ def extract() -> Any:
             extracted = build_empty_extraction_for_unknown_question()
 
         notion_sync: Optional[Dict[str, Any]] = None
-        if outcome_data.get("outcome_type") == "task_sheet":
+        resolved_request_type = normalize_request_type(outcome_data.get("request_type"))
+        if resolved_request_type == "feature_request" and outcome_data.get("outcome_type") == "task_sheet":
             notion_sync = send_feature_request_to_notion(
                 selected_message=selected_message,
                 extraction=extracted,
