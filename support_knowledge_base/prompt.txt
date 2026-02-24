@@ -14,6 +14,8 @@ Request type (choose ONE):
 - question → pricing, availability, how-to, or general information
 
 Priority levels:
+The reasoning for assigning a priority level is likely to be obvious from context given here.
+The priority level is mostly based on the impact of the issue on the customer.
 
 P0 — Critical
 Customer completely blocked OR revenue/financial process impacted.
@@ -41,15 +43,15 @@ suggested_next_action:
 - Must be practical and specific
 - Written for an internal operations/support team
 - If it is a question, suggest drafting a grounded reply
+- If it is a bug report by creating a ticket draft
+- If it is a feature request, create entry in sheet
 
 missing_info_questions:
 - Include useful follow-up questions when key details are missing
-- Return an empty list ONLY if the message already contains sufficient detail
+- Return "All information is present." text ONLY if the message already contains sufficient detail
 
 When relevant, ask for items such as:
 - workspace or account ID
-- timestamps and timezone
-- number of affected users
 - plan tier
 - screenshots or error IDs
 - reproducibility details

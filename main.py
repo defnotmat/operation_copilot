@@ -58,8 +58,6 @@ def load_json(path: Path) -> Dict[str, Any]:
 
 
 STOPWORDS = {
-    "the",
-    "and",
     "for",
     "with",
     "that",
@@ -398,6 +396,146 @@ def extract_with_llm(
     return {"extraction": parsed, "retrieved_manual_chunks": retrieved_chunks}
 
 
+def normalize_request_type(value: Any) -> str:
+    token = str(value or "").strip().lower()
+    aliases = {
+        "bug": "bug_report",
+        "bug_report": "bug_report",
+        "feature": "feature_request",
+        "feature_request": "feature_request",
+        "question": "question",
+    }
+    return aliases.get(token, token)
+
+
+def build_bug_ticket_draft(selected_message: Dict[str, Any], extraction: Dict[str, Any]) -> Dict[str, Any]:
+    priority = extraction.get("priority") if isinstance(extraction.get("priority"), dict) else {}
+    missing = extraction.get("missing_info_questions")
+    return {
+        "title": extraction.get("summary", "No summary"),
+        "ticket_type": "bug",
+        "priority": priority.get("level", "P2"),
+        "reporter": selected_message.get("sender", "unknown"),
+        "source_channel": selected_message.get("source", "unknown"),
+        "message_id": selected_message.get("id", "unknown"),
+        "customer_message": selected_message.get("message", ""),
+        "triage_notes": extraction.get("suggested_next_action", "no information found"),
+        "missing_info_questions": missing if isinstance(missing, list) else [],
+    }
+
+
+def build_feature_entry_draft(selected_message: Dict[str, Any], extraction: Dict[str, Any]) -> Dict[str, Any]:
+    priority = extraction.get("priority") if isinstance(extraction.get("priority"), dict) else {}
+    missing = extraction.get("missing_info_questions")
+    return {
+        "title": extraction.get("summary", "No summary"),
+        "request_type": "feature_request",
+        "requested_by": selected_message.get("sender", "unknown"),
+        "source_channel": selected_message.get("source", "unknown"),
+        "message_id": selected_message.get("id", "unknown"),
+        "problem_statement": selected_message.get("message", ""),
+        "priority_signal": priority.get("level", "P3"),
+        "ops_notes": extraction.get("suggested_next_action", "no information found"),
+        "follow_up_questions": missing if isinstance(missing, list) else [],
+    }
+
+
+def build_question_reply_draft(selected_message: Dict[str, Any], extraction: Dict[str, Any]) -> Dict[str, Any]:
+    missing = extraction.get("missing_info_questions")
+    follow_ups = missing if isinstance(missing, list) else []
+    follow_up_line = ""
+    if follow_ups:
+        follow_up_line = " To help us answer accurately, could you share: " + "; ".join(follow_ups)
+
+    reply = (
+        "Thanks for reaching out. "
+        f"{extraction.get('summary', 'I reviewed your question.')} "
+        f"Next step: {extraction.get('suggested_next_action', 'We will review and respond shortly.')}."
+        f"{follow_up_line}"
+    )
+    return {
+        "to": selected_message.get("sender", "unknown"),
+        "channel": selected_message.get("source", "unknown"),
+        "message_id": selected_message.get("id", "unknown"),
+        "reply_draft": reply.strip(),
+    }
+
+
+def mock_create_ticket_draft(payload: Dict[str, Any]) -> Dict[str, Any]:
+    return {
+        "mock_destination": "ticketing",
+        "status": "draft_created",
+        "draft_id": f"TICKET-DRAFT-{payload.get('message_id', 'UNKNOWN')}",
+        "payload": payload,
+    }
+
+
+def mock_create_feature_entry(payload: Dict[str, Any]) -> Dict[str, Any]:
+    return {
+        "mock_destination": "sheet_or_notion",
+        "status": "entry_created",
+        "entry_id": f"FEATURE-ENTRY-{payload.get('message_id', 'UNKNOWN')}",
+        "payload": payload,
+    }
+
+
+def mock_generate_reply_draft(payload: Dict[str, Any]) -> Dict[str, Any]:
+    return {
+        "mock_destination": "reply_drafts",
+        "status": "draft_created",
+        "draft_id": f"REPLY-DRAFT-{payload.get('message_id', 'UNKNOWN')}",
+        "payload": payload,
+    }
+
+
+def route_extraction_mock(
+    selected_message: Dict[str, Any],
+    extraction: Dict[str, Any],
+    log_step: Optional[Any] = None,
+) -> Dict[str, Any]:
+    if log_step:
+        log_step("routing_start", "Routing stage started.")
+
+    req_type = normalize_request_type(extraction.get("request_type") or selected_message.get("request_type"))
+    route_key = req_type
+
+    if req_type == "bug_report":
+        if log_step:
+            log_step("routing_selected", "Route selected: bug_report -> ticket draft.")
+        payload = build_bug_ticket_draft(selected_message, extraction)
+        result = mock_create_ticket_draft(payload)
+        endpoint = "/mock/routes/bug-ticket-draft"
+        action = "create_ticket_draft"
+    elif req_type == "feature_request":
+        if log_step:
+            log_step("routing_selected", "Route selected: feature_request -> sheet/notion entry.")
+        payload = build_feature_entry_draft(selected_message, extraction)
+        result = mock_create_feature_entry(payload)
+        endpoint = "/mock/routes/feature-entry"
+        action = "create_feature_entry"
+    else:
+        route_key = "question"
+        if log_step:
+            log_step("routing_selected", "Route selected: question -> reply draft.")
+        payload = build_question_reply_draft(selected_message, extraction)
+        result = mock_generate_reply_draft(payload)
+        endpoint = "/mock/routes/question-reply-draft"
+        action = "generate_reply_draft"
+
+    if log_step:
+        log_step("routing_dispatch_done", f"Mock action `{action}` prepared for {endpoint}.")
+        log_step("routing_complete", "Routing stage completed.")
+
+    return {
+        "mode": "mock",
+        "request_type": req_type,
+        "route": route_key,
+        "action": action,
+        "mock_endpoint": endpoint,
+        "result": result,
+    }
+
+
 @app.get("/")
 def index() -> Any:
     return render_template("index.html")
@@ -423,6 +561,24 @@ def list_messages() -> Any:
     return jsonify(flatten_messages(MESSAGES_DB))
 
 
+@app.post("/mock/routes/bug-ticket-draft")
+def mock_bug_ticket_draft_route() -> Any:
+    payload = request.get_json(silent=True) or {}
+    return jsonify(mock_create_ticket_draft(payload))
+
+
+@app.post("/mock/routes/feature-entry")
+def mock_feature_entry_route() -> Any:
+    payload = request.get_json(silent=True) or {}
+    return jsonify(mock_create_feature_entry(payload))
+
+
+@app.post("/mock/routes/question-reply-draft")
+def mock_question_reply_route() -> Any:
+    payload = request.get_json(silent=True) or {}
+    return jsonify(mock_generate_reply_draft(payload))
+
+
 @app.post("/extract")
 def extract() -> Any:
     payload = request.get_json(silent=True) or {}
@@ -439,12 +595,14 @@ def extract() -> Any:
         llm_result = extract_with_llm(selected_message, log_step=add_log)
         extracted = llm_result["extraction"]
         retrieved_manual_chunks = llm_result["retrieved_manual_chunks"]
-        add_log("pipeline_complete", "Extraction pipeline completed successfully.")
+        routing = route_extraction_mock(selected_message, extracted, log_step=add_log)
+        add_log("pipeline_complete", "Extraction and routing pipeline completed successfully.")
 
         return jsonify(
             {
                 "input": selected_message,
                 "extraction": extracted,
+                "routing": routing,
                 "retrieved_manual_chunk_ids": [chunk.get("id", "UNKNOWN") for chunk in retrieved_manual_chunks],
                 "retrieved_manual_chunks": retrieved_manual_chunks,
                 "model": os.getenv("OPENAI_MODEL", "gpt-4o-mini"),

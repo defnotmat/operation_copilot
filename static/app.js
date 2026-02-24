@@ -58,10 +58,12 @@ function renderMessagePreview(requestType) {
 
 function renderOutput(data) {
   const extraction = data.extraction;
+  const routing = data.routing || {};
   const missing = Array.isArray(extraction.missing_info_questions)
     ? extraction.missing_info_questions
     : [];
   const manualChunks = Array.isArray(data.retrieved_manual_chunks) ? data.retrieved_manual_chunks : [];
+  const routePayload = routing.result && routing.result.payload ? routing.result.payload : null;
 
   outputEl.classList.remove("empty");
   outputEl.innerHTML = `
@@ -69,6 +71,7 @@ function renderOutput(data) {
       <span class="badge">${escapeHtml(prettyLabel(extraction.request_type || "unknown"))}</span>
       <span class="badge">Priority ${escapeHtml(extraction.priority?.level || "-")}</span>
       <span class="badge">Model ${escapeHtml(data.model || "-")}</span>
+      ${routing.route ? `<span class="badge">Route ${escapeHtml(prettyLabel(routing.route))}</span>` : ""}
     </div>
 
     <div class="block">
@@ -84,6 +87,16 @@ function renderOutput(data) {
     <div class="block">
       <p class="block-title">Suggested Next Action</p>
       <p class="block-body">${escapeHtml(extraction.suggested_next_action || "no information found")}</p>
+    </div>
+
+    <div class="block">
+      <p class="block-title">Routing (Mock)</p>
+      <p class="block-body">
+        Action: <strong>${escapeHtml(prettyLabel(routing.action || "n/a"))}</strong><br />
+        Endpoint: <code>${escapeHtml(routing.mock_endpoint || "n/a")}</code><br />
+        Status: ${escapeHtml(routing.result?.status || "n/a")}
+      </p>
+      <pre>${JSON.stringify(routePayload || {}, null, 2)}</pre>
     </div>
 
     <div class="block">
@@ -153,6 +166,10 @@ async function runPipeline() {
         llm_request_done: "Model response received.",
         json_parse_done: "Response structured as JSON.",
         schema_check_done: "Schema validation complete.",
+        routing_start: "Routing stage started.",
+        routing_selected: "Routing path selected.",
+        routing_dispatch_done: "Mock route payload created.",
+        routing_complete: "Routing complete.",
         pipeline_complete: "Pipeline complete.",
         pipeline_failed: "Pipeline could not complete."
       };
