@@ -261,6 +261,140 @@ h2 {
   padding-left: 18px;
 }
 
+h3 {
+  margin: 0 0 10px;
+  font-size: 1rem;
+  line-height: 1.35;
+  color: #f5f7ff;
+}
+
+.template-card {
+  border-radius: 12px;
+  border: 1px solid rgba(155, 172, 255, 0.26);
+  background: rgba(8, 12, 30, 0.78);
+  padding: 12px;
+}
+
+.template-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.template-kicker {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #a6b8ff;
+  font-weight: 700;
+}
+
+.template-id {
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: #dbe4ff;
+  padding: 4px 8px;
+  border-radius: 999px;
+  border: 1px solid rgba(148, 167, 255, 0.3);
+}
+
+.ticket-template {
+  border-left: 3px solid #6aa6ff;
+}
+
+.task-template {
+  border-left: 3px solid #7ef3cc;
+}
+
+.reply-template {
+  border-left: 3px solid #ffb3d8;
+}
+
+.template-section {
+  margin-top: 10px;
+}
+
+.kv-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.kv-grid div {
+  border: 1px solid rgba(146, 161, 242, 0.22);
+  border-radius: 8px;
+  padding: 7px 8px;
+  background: rgba(12, 17, 40, 0.7);
+}
+
+.kv-grid span {
+  display: block;
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #9ca9d6;
+  margin-bottom: 3px;
+}
+
+.kv-grid strong {
+  font-size: 0.87rem;
+  color: #eef3ff;
+}
+
+.task-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 2px 0 10px;
+  border: 1px solid rgba(144, 219, 196, 0.26);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.task-table th,
+.task-table td {
+  text-align: left;
+  padding: 7px 8px;
+  border-bottom: 1px solid rgba(130, 206, 181, 0.2);
+  font-size: 0.84rem;
+  vertical-align: top;
+}
+
+.task-table tr:last-child th,
+.task-table tr:last-child td {
+  border-bottom: none;
+}
+
+.task-table th {
+  width: 150px;
+  color: #acf3dd;
+  font-weight: 600;
+}
+
+.reply-text {
+  margin: 0;
+  white-space: pre-wrap;
+  line-height: 1.5;
+  color: #fbe8f2;
+}
+
+.chunk-chip-wrap {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.chunk-chip {
+  border-radius: 999px;
+  border: 1px solid rgba(255, 184, 221, 0.42);
+  background: rgba(255, 179, 216, 0.12);
+  color: #ffd8ea;
+  padding: 4px 8px;
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
 pre {
   margin: 0;
   background: rgba(7, 10, 26, 0.88);
@@ -300,5 +434,9 @@ pre {
   .output,
   .logs {
     min-height: 150px;
+  }
+
+  .kv-grid {
+    grid-template-columns: 1fr;
   }
 }

@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Extraction Pipeline Demo</title>
+  <title>Support Routing Demo</title>
   <link rel="stylesheet" href="/static/styles.css" />
 </head>
 <body>
@@ -13,8 +13,8 @@
   <main class="page">
     <header class="hero">
       <p class="eyebrow">Operations Copilot</p>
-      <h1>Support Message Extraction Demo</h1>
-      <p class="sub">Select a request type, run the pipeline, and inspect each step with the final structured output.</p>
+      <h1>Support Message Routing Demo</h1>
+      <p class="sub">Bug -> internal ticket, Feature -> task sheet, Question -> manual-grounded reply draft.</p>
     </header>
 
     <section class="panel controls reveal">
@@ -22,7 +22,7 @@
         <label for="requestType">Request Type</label>
         <select id="requestType"></select>
       </div>
-      <button id="runBtn">Run Extraction Pipeline</button>
+      <button id="runBtn">Run Routing Pipeline</button>
     </section>
 
     <section class="grid reveal-delay-1">
@@ -37,7 +37,7 @@
       </article>
 
       <article class="panel output-panel">
-        <h2>Extraction Output</h2>
+        <h2>Route Outcome</h2>
         <div id="output" class="output empty">No output yet.</div>
       </article>
     </section>

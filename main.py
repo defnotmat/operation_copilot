@@ -23,7 +23,6 @@ MESSAGES_PATH = ASSETS_DIR / "messages.json"
 SCHEMA_PATH = ASSETS_DIR / "extraction_schema.json"
 ENV_PATH = BASE_DIR / ".env"
 PROMPT_PATH = ASSETS_DIR / "prompt.txt"
-MANUAL_TXT_PATH = ASSETS_DIR / "manual.txt"
 MANUAL_JSON_PATH = ASSETS_DIR / "manual.json"
 
 app = Flask(__name__)
@@ -52,7 +51,7 @@ def load_env_file() -> None:
         os.environ.setdefault(key, value)
 
 
-def load_json(path: Path) -> Dict[str, Any]:
+def load_json(path: Path) -> Any:
     with path.open("r", encoding="utf-8") as f:
         return json.load(f)
 
@@ -133,86 +132,24 @@ def normalize_manual_chunks(raw: Any) -> List[Dict[str, str]]:
     return chunks
 
 
-def parse_manual_text_chunks(content: str) -> List[Dict[str, str]]:
-    text = content.strip()
-    if not text:
+def load_manual_json_chunks() -> List[Dict[str, str]]:
+    if not MANUAL_JSON_PATH.exists():
         return []
-
-    # Support JSON-formatted manual text files as well.
-    try:
-        return normalize_manual_chunks(json.loads(text))
-    except Exception:
-        pass
-
-    blocks = [b.strip() for b in re.split(r"\n\s*-{3,}\s*\n", text) if b.strip()]
-    if len(blocks) == 1:
-        blocks = [b.strip() for b in re.split(r"\n{2,}", text) if b.strip()]
-
-    chunks: List[Dict[str, str]] = []
-    found_explicit_id = False
-
-    for idx, block in enumerate(blocks, start=1):
-        lines = [ln.strip() for ln in block.splitlines() if ln.strip()]
-        if not lines:
-            continue
-
-        first = lines[0]
-        chunk_id = ""
-        title = ""
-        body_start = 0
-
-        patterns = [
-            r"^(?:id|chunk_id|chunk)\s*[:=]\s*([A-Za-z0-9_./-]+)$",
-            r"^\[([A-Za-z0-9_./-]+)\]$",
-            r"^#{1,6}\s*([A-Za-z0-9_./-]+)$",
-        ]
-        for pattern in patterns:
-            match = re.match(pattern, first, flags=re.IGNORECASE)
-            if match:
-                chunk_id = match.group(1).strip()
-                found_explicit_id = True
-                body_start = 1
-                break
-
-        if not chunk_id:
-            chunk_id = f"CHUNK_{idx:03d}"
-
-        if body_start < len(lines) and lines[body_start].lower().startswith("title:"):
-            title = lines[body_start].split(":", 1)[1].strip()
-            body_start += 1
-
-        text_body = "\n".join(lines[body_start:]).strip()
-        if not text_body:
-            text_body = block
-
-        chunks.append({"id": chunk_id, "title": title, "text": text_body})
-
-    if not found_explicit_id:
-        return [{"id": "CHUNK_001", "title": "", "text": text}]
-
-    return chunks
+    return normalize_manual_chunks(load_json(MANUAL_JSON_PATH))
 
 
-def load_manual_chunks() -> List[Dict[str, str]]:
-    if MANUAL_TXT_PATH.exists():
-        return parse_manual_text_chunks(MANUAL_TXT_PATH.read_text(encoding="utf-8"))
-    if MANUAL_JSON_PATH.exists():
-        return normalize_manual_chunks(load_json(MANUAL_JSON_PATH))
-    return []
-
-
-def retrieve_top_manual_chunks(query: str, top_k: int = 3) -> List[Dict[str, str]]:
-    if not MANUAL_CHUNKS:
+def retrieve_top_manual_chunks(query: str, chunks: List[Dict[str, str]], top_k: int = 3) -> List[Dict[str, str]]:
+    if not chunks:
         return []
 
     query_tokens = tokenize(query)
     if not query_tokens:
-        return MANUAL_CHUNKS[:top_k]
+        return chunks[:top_k]
 
     query_counter = Counter(query_tokens)
     scored: List[Any] = []
 
-    for idx, chunk in enumerate(MANUAL_CHUNKS):
+    for idx, chunk in enumerate(chunks):
         haystack = f"{chunk.get('id', '')} {chunk.get('title', '')} {chunk.get('text', '')}"
         chunk_tokens = tokenize(haystack)
         chunk_counter = Counter(chunk_tokens)
@@ -227,7 +164,7 @@ def retrieve_top_manual_chunks(query: str, top_k: int = 3) -> List[Dict[str, str
         scored.append((score, idx, chunk))
 
     if not scored:
-        return MANUAL_CHUNKS[:top_k]
+        return chunks[:top_k]
 
     scored.sort(key=lambda x: (-x[0], x[1]))
     return [entry[2] for entry in scored[:top_k]]
@@ -236,7 +173,7 @@ def retrieve_top_manual_chunks(query: str, top_k: int = 3) -> List[Dict[str, str
 EXTRACTION_SCHEMA = load_json(SCHEMA_PATH)
 SYSTEM_PROMPT = PROMPT_PATH.read_text(encoding="utf-8")
 MESSAGES_DB = load_json(MESSAGES_PATH)
-MANUAL_CHUNKS = load_manual_chunks()
+MANUAL_JSON_CHUNKS = load_manual_json_chunks()
 load_env_file()
 
 
@@ -322,12 +259,10 @@ def format_manual_context(chunks: List[Dict[str, str]]) -> str:
     return "\n\n".join(parts)
 
 
-def build_prompt(selected_message: Dict[str, Any], schema: Dict[str, Any], manual_chunks: List[Dict[str, str]]) -> str:
+def build_extraction_prompt(selected_message: Dict[str, Any], schema: Dict[str, Any]) -> str:
     return (
         "Schema:\n"
         f"{json.dumps(schema, ensure_ascii=True)}\n\n"
-        "Relevant user manual chunks (top 3 keyword matches, use these as source of truth for factual details):\n"
-        f"{format_manual_context(manual_chunks)}\n\n"
         "Customer message input:\n"
         f"{json.dumps(selected_message, ensure_ascii=True)}"
     )
@@ -349,25 +284,24 @@ def get_openai_client() -> Any:
     return OpenAI(api_key=api_key)
 
 
-def extract_with_llm(
-    selected_message: Dict[str, Any],
-    log_step: Optional[Any] = None,
-) -> Dict[str, Any]:
+QUESTION_REPLY_SYSTEM_PROMPT = (
+    "You are a support reply assistant.\n"
+    "Use only the provided manual chunks as factual source.\n"
+    "Do not invent plan details, pricing, or roadmap commitments.\n"
+    "If the manual does not fully answer, state uncertainty briefly and ask a concise follow-up.\n"
+    "Return JSON only."
+)
+
+
+def extract_with_llm(selected_message: Dict[str, Any], log_step: Optional[Any] = None) -> Dict[str, Any]:
     client = get_openai_client()
     model = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
 
-    customer_text = str(selected_message.get("message", ""))
-    retrieved_chunks = retrieve_top_manual_chunks(customer_text, top_k=3)
+    prompt = build_extraction_prompt(selected_message, EXTRACTION_SCHEMA)
     if log_step:
-        ids = ", ".join([chunk.get("id", "UNKNOWN") for chunk in retrieved_chunks]) or "none"
-        log_step("manual_retrieval_done", f"Retrieved manual chunks: {ids}")
+        log_step("classification_prompt_ready", "Structured extraction prompt prepared.")
+        log_step("classification_llm_start", f"Calling model: {model}")
 
-    prompt = build_prompt(selected_message, EXTRACTION_SCHEMA, retrieved_chunks)
-    if log_step:
-        log_step("prompt_ready", "Prompt composed with schema and selected message.")
-
-    if log_step:
-        log_step("llm_request_start", f"Calling model: {model}")
     response = client.chat.completions.create(
         model=model,
         messages=[
@@ -378,161 +312,195 @@ def extract_with_llm(
         response_format={"type": "json_object"},
     )
     if log_step:
-        log_step("llm_request_done", "Model response received.")
+        log_step("classification_llm_done", "Structured extraction received.")
 
     content = response.choices[0].message.content or "{}"
     parsed = json.loads(content)
     if log_step:
-        log_step("json_parse_done", "Response parsed into JSON.")
+        log_step("classification_json_parse_done", "Extraction JSON parsed.")
 
-    # Minimal sanity check to help frontend fail fast if model drifts.
     required = ["request_type", "priority", "summary", "suggested_next_action", "missing_info_questions"]
     missing = [k for k in required if k not in parsed]
     if missing:
         raise ValueError(f"LLM output missing keys: {missing}")
     if log_step:
-        log_step("schema_check_done", "Required extraction keys are present.")
+        log_step("classification_schema_check_done", "Extraction schema validated.")
 
-    return {"extraction": parsed, "retrieved_manual_chunks": retrieved_chunks}
+    return {"extraction": parsed}
 
 
 def normalize_request_type(value: Any) -> str:
     token = str(value or "").strip().lower()
     aliases = {
         "bug": "bug_report",
+        "bug complaint": "bug_report",
+        "bug report": "bug_report",
+        "bug_complaint": "bug_report",
         "bug_report": "bug_report",
         "feature": "feature_request",
+        "feature request": "feature_request",
         "feature_request": "feature_request",
         "question": "question",
     }
     return aliases.get(token, token)
 
 
-def build_bug_ticket_draft(selected_message: Dict[str, Any], extraction: Dict[str, Any]) -> Dict[str, Any]:
+def build_bug_ticket_entry(selected_message: Dict[str, Any], extraction: Dict[str, Any]) -> Dict[str, Any]:
     priority = extraction.get("priority") if isinstance(extraction.get("priority"), dict) else {}
     missing = extraction.get("missing_info_questions")
+    message_id = str(selected_message.get("id", "unknown")).replace("_", "-").upper()
     return {
-        "title": extraction.get("summary", "No summary"),
-        "ticket_type": "bug",
+        "template": "internal_bug_ticket",
+        "ticket_id": f"BUG-{message_id}",
+        "status": "New",
+        "queue": "Support Engineering",
         "priority": priority.get("level", "P2"),
+        "title": extraction.get("summary", "No summary"),
         "reporter": selected_message.get("sender", "unknown"),
-        "source_channel": selected_message.get("source", "unknown"),
-        "message_id": selected_message.get("id", "unknown"),
+        "source": selected_message.get("source", "unknown"),
+        "original_message_id": selected_message.get("id", "unknown"),
         "customer_message": selected_message.get("message", ""),
-        "triage_notes": extraction.get("suggested_next_action", "no information found"),
-        "missing_info_questions": missing if isinstance(missing, list) else [],
+        "triage_rationale": priority.get("rationale", "no information found"),
+        "next_internal_action": extraction.get("suggested_next_action", "no information found"),
+        "missing_info_checklist": missing if isinstance(missing, list) else [],
     }
 
 
-def build_feature_entry_draft(selected_message: Dict[str, Any], extraction: Dict[str, Any]) -> Dict[str, Any]:
+def build_feature_task_sheet(selected_message: Dict[str, Any], extraction: Dict[str, Any]) -> Dict[str, Any]:
     priority = extraction.get("priority") if isinstance(extraction.get("priority"), dict) else {}
     missing = extraction.get("missing_info_questions")
+    message_id = str(selected_message.get("id", "unknown")).replace("_", "-").upper()
     return {
+        "template": "product_feature_task_sheet",
+        "task_id": f"FEAT-{message_id}",
+        "workspace": "Product Requests Board",
+        "status": "Inbox",
+        "owner_team": "Product Ops",
+        "impact_priority": priority.get("level", "P3"),
         "title": extraction.get("summary", "No summary"),
-        "request_type": "feature_request",
-        "requested_by": selected_message.get("sender", "unknown"),
-        "source_channel": selected_message.get("source", "unknown"),
-        "message_id": selected_message.get("id", "unknown"),
+        "requester": selected_message.get("sender", "unknown"),
+        "source": selected_message.get("source", "unknown"),
         "problem_statement": selected_message.get("message", ""),
-        "priority_signal": priority.get("level", "P3"),
-        "ops_notes": extraction.get("suggested_next_action", "no information found"),
-        "follow_up_questions": missing if isinstance(missing, list) else [],
+        "proposed_next_step": extraction.get("suggested_next_action", "no information found"),
+        "discovery_questions": missing if isinstance(missing, list) else [],
+        "tags": ["customer-feedback", str(selected_message.get("source", "unknown"))],
     }
 
 
-def build_question_reply_draft(selected_message: Dict[str, Any], extraction: Dict[str, Any]) -> Dict[str, Any]:
-    missing = extraction.get("missing_info_questions")
-    follow_ups = missing if isinstance(missing, list) else []
-    follow_up_line = ""
-    if follow_ups:
-        follow_up_line = " To help us answer accurately, could you share: " + "; ".join(follow_ups)
-
-    reply = (
-        "Thanks for reaching out. "
-        f"{extraction.get('summary', 'I reviewed your question.')} "
-        f"Next step: {extraction.get('suggested_next_action', 'We will review and respond shortly.')}."
-        f"{follow_up_line}"
+def build_question_reply_prompt(
+    selected_message: Dict[str, Any],
+    extraction: Dict[str, Any],
+    manual_chunks: List[Dict[str, str]],
+) -> str:
+    return (
+        "Customer message:\n"
+        f"{json.dumps(selected_message, ensure_ascii=True)}\n\n"
+        "Structured extraction:\n"
+        f"{json.dumps(extraction, ensure_ascii=True)}\n\n"
+        "Manual chunks from manual.json (ground truth):\n"
+        f"{format_manual_context(manual_chunks)}\n\n"
+        "Return JSON with keys:\n"
+        '{"reply_draft":"string","grounding_chunk_ids":["string"]}\n'
+        "Use only grounded facts from the manual chunks."
     )
-    return {
-        "to": selected_message.get("sender", "unknown"),
-        "channel": selected_message.get("source", "unknown"),
-        "message_id": selected_message.get("id", "unknown"),
-        "reply_draft": reply.strip(),
-    }
 
 
-def mock_create_ticket_draft(payload: Dict[str, Any]) -> Dict[str, Any]:
-    return {
-        "mock_destination": "ticketing",
-        "status": "draft_created",
-        "draft_id": f"TICKET-DRAFT-{payload.get('message_id', 'UNKNOWN')}",
-        "payload": payload,
-    }
-
-
-def mock_create_feature_entry(payload: Dict[str, Any]) -> Dict[str, Any]:
-    return {
-        "mock_destination": "sheet_or_notion",
-        "status": "entry_created",
-        "entry_id": f"FEATURE-ENTRY-{payload.get('message_id', 'UNKNOWN')}",
-        "payload": payload,
-    }
-
-
-def mock_generate_reply_draft(payload: Dict[str, Any]) -> Dict[str, Any]:
-    return {
-        "mock_destination": "reply_drafts",
-        "status": "draft_created",
-        "draft_id": f"REPLY-DRAFT-{payload.get('message_id', 'UNKNOWN')}",
-        "payload": payload,
-    }
-
-
-def route_extraction_mock(
+def generate_question_reply_with_manual(
     selected_message: Dict[str, Any],
     extraction: Dict[str, Any],
     log_step: Optional[Any] = None,
 ) -> Dict[str, Any]:
-    if log_step:
-        log_step("routing_start", "Routing stage started.")
+    if not MANUAL_JSON_CHUNKS:
+        raise ConfigError("manual.json is missing or empty; cannot generate grounded reply for question route.")
 
+    customer_text = str(selected_message.get("message", ""))
+    retrieved_chunks = retrieve_top_manual_chunks(customer_text, MANUAL_JSON_CHUNKS, top_k=3)
+    if log_step:
+        ids = ", ".join([chunk.get("id", "UNKNOWN") for chunk in retrieved_chunks]) or "none"
+        log_step("question_manual_retrieval_done", f"Retrieved manual.json chunks: {ids}")
+
+    prompt = build_question_reply_prompt(selected_message, extraction, retrieved_chunks)
+    model = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
+    client = get_openai_client()
+    if log_step:
+        log_step("question_reply_prompt_ready", "Question reply prompt prepared from manual.json chunks.")
+        log_step("question_reply_llm_start", f"Calling model: {model}")
+
+    response = client.chat.completions.create(
+        model=model,
+        messages=[
+            {"role": "system", "content": QUESTION_REPLY_SYSTEM_PROMPT},
+            {"role": "user", "content": prompt},
+        ],
+        temperature=0,
+        response_format={"type": "json_object"},
+    )
+    if log_step:
+        log_step("question_reply_llm_done", "Manual-grounded reply generated.")
+
+    content = response.choices[0].message.content or "{}"
+    parsed = json.loads(content)
+    if log_step:
+        log_step("question_reply_json_parse_done", "Question reply JSON parsed.")
+
+    reply_draft = str(parsed.get("reply_draft", "")).strip()
+    if not reply_draft:
+        raise ValueError("Question reply output missing `reply_draft`.")
+
+    chunk_ids = parsed.get("grounding_chunk_ids")
+    if not isinstance(chunk_ids, list) or not chunk_ids:
+        chunk_ids = [chunk.get("id", "UNKNOWN") for chunk in retrieved_chunks]
+
+    return {
+        "to": selected_message.get("sender", "unknown"),
+        "channel": selected_message.get("source", "unknown"),
+        "message_id": selected_message.get("id", "unknown"),
+        "reply_draft": reply_draft,
+        "grounding_chunk_ids": [str(item) for item in chunk_ids],
+        "used_manual_chunks": retrieved_chunks,
+    }
+
+
+def build_outcome(
+    selected_message: Dict[str, Any],
+    extraction: Dict[str, Any],
+    log_step: Optional[Any] = None,
+) -> Dict[str, Any]:
     req_type = normalize_request_type(extraction.get("request_type") or selected_message.get("request_type"))
-    route_key = req_type
+    allowed = {"bug_report", "feature_request", "question"}
+    if req_type not in allowed:
+        req_type = normalize_request_type(selected_message.get("request_type"))
+    if req_type not in allowed:
+        req_type = "question"
 
     if req_type == "bug_report":
         if log_step:
-            log_step("routing_selected", "Route selected: bug_report -> ticket draft.")
-        payload = build_bug_ticket_draft(selected_message, extraction)
-        result = mock_create_ticket_draft(payload)
-        endpoint = "/mock/routes/bug-ticket-draft"
-        action = "create_ticket_draft"
+            log_step("outcome_route_selected", "Route selected: bug_report -> internal ticket entry.")
+        return {
+            "outcome_type": "ticket_entry",
+            "request_type": req_type,
+            "outcome": build_bug_ticket_entry(selected_message, extraction),
+            "question_manual_chunks": [],
+        }
     elif req_type == "feature_request":
         if log_step:
-            log_step("routing_selected", "Route selected: feature_request -> sheet/notion entry.")
-        payload = build_feature_entry_draft(selected_message, extraction)
-        result = mock_create_feature_entry(payload)
-        endpoint = "/mock/routes/feature-entry"
-        action = "create_feature_entry"
-    else:
-        route_key = "question"
-        if log_step:
-            log_step("routing_selected", "Route selected: question -> reply draft.")
-        payload = build_question_reply_draft(selected_message, extraction)
-        result = mock_generate_reply_draft(payload)
-        endpoint = "/mock/routes/question-reply-draft"
-        action = "generate_reply_draft"
+            log_step("outcome_route_selected", "Route selected: feature_request -> task sheet.")
+        return {
+            "outcome_type": "task_sheet",
+            "request_type": req_type,
+            "outcome": build_feature_task_sheet(selected_message, extraction),
+            "question_manual_chunks": [],
+        }
 
     if log_step:
-        log_step("routing_dispatch_done", f"Mock action `{action}` prepared for {endpoint}.")
-        log_step("routing_complete", "Routing stage completed.")
-
+        log_step("outcome_route_selected", "Route selected: question -> manual-grounded customer reply.")
+    reply_payload = generate_question_reply_with_manual(selected_message, extraction, log_step=log_step)
+    question_chunks = reply_payload.pop("used_manual_chunks", [])
     return {
-        "mode": "mock",
-        "request_type": req_type,
-        "route": route_key,
-        "action": action,
-        "mock_endpoint": endpoint,
-        "result": result,
+        "outcome_type": "reply_draft",
+        "request_type": "question",
+        "outcome": reply_payload,
+        "question_manual_chunks": question_chunks,
     }
 
 
@@ -561,24 +529,6 @@ def list_messages() -> Any:
     return jsonify(flatten_messages(MESSAGES_DB))
 
 
-@app.post("/mock/routes/bug-ticket-draft")
-def mock_bug_ticket_draft_route() -> Any:
-    payload = request.get_json(silent=True) or {}
-    return jsonify(mock_create_ticket_draft(payload))
-
-
-@app.post("/mock/routes/feature-entry")
-def mock_feature_entry_route() -> Any:
-    payload = request.get_json(silent=True) or {}
-    return jsonify(mock_create_feature_entry(payload))
-
-
-@app.post("/mock/routes/question-reply-draft")
-def mock_question_reply_route() -> Any:
-    payload = request.get_json(silent=True) or {}
-    return jsonify(mock_generate_reply_draft(payload))
-
-
 @app.post("/extract")
 def extract() -> Any:
     payload = request.get_json(silent=True) or {}
@@ -594,17 +544,20 @@ def extract() -> Any:
 
         llm_result = extract_with_llm(selected_message, log_step=add_log)
         extracted = llm_result["extraction"]
-        retrieved_manual_chunks = llm_result["retrieved_manual_chunks"]
-        routing = route_extraction_mock(selected_message, extracted, log_step=add_log)
-        add_log("pipeline_complete", "Extraction and routing pipeline completed successfully.")
+        outcome_data = build_outcome(selected_message, extracted, log_step=add_log)
+        add_log("pipeline_complete", "Request processed with route-specific outcome.")
 
         return jsonify(
             {
                 "input": selected_message,
                 "extraction": extracted,
-                "routing": routing,
-                "retrieved_manual_chunk_ids": [chunk.get("id", "UNKNOWN") for chunk in retrieved_manual_chunks],
-                "retrieved_manual_chunks": retrieved_manual_chunks,
+                "request_type": outcome_data["request_type"],
+                "outcome_type": outcome_data["outcome_type"],
+                "outcome": outcome_data["outcome"],
+                "question_manual_chunk_ids": [
+                    chunk.get("id", "UNKNOWN") for chunk in outcome_data.get("question_manual_chunks", [])
+                ],
+                "question_manual_chunks": outcome_data.get("question_manual_chunks", []),
                 "model": os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
                 "pipeline_logs": pipeline_logs,
             }
