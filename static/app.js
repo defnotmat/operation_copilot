@@ -107,7 +107,39 @@ function renderList(items, emptyLabel = "No items") {
   return `<ul class="missing-list">${items.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>`;
 }
 
-function renderTicketOutcome(ticket) {
+function buildGroundingDisplay(groundingChunkIds, manualChunks) {
+  const groundedIds = Array.isArray(groundingChunkIds) ? groundingChunkIds : [];
+  const availableChunks = Array.isArray(manualChunks) ? manualChunks : [];
+  const shownChunks = groundedIds.length
+    ? availableChunks.filter((chunk) => groundedIds.includes(chunk.id))
+    : availableChunks;
+  const chunkBadges = groundedIds.length
+    ? groundedIds.map((id) => `<span class="chunk-chip">${escapeHtml(id)}</span>`).join("")
+    : "<span class=\"chunk-chip\">No chunk ids</span>";
+  const chunkContext = shownChunks.length
+    ? `
+      <div class="chunk-context-list">
+        ${shownChunks
+          .map(
+            (chunk) => `
+          <article class="chunk-context-card">
+            <p class="chunk-context-head">
+              <strong>${escapeHtml(chunk.id || "UNKNOWN")}</strong>
+              ${chunk.title ? `<span>${escapeHtml(chunk.title)}</span>` : ""}
+            </p>
+            <p class="chunk-context-text">${escapeHtml(chunk.text || "No chunk text available.")}</p>
+          </article>
+        `
+          )
+          .join("")}
+      </div>
+    `
+    : "<p class=\"block-body\">No manual chunk context available.</p>";
+  return { chunkBadges, chunkContext };
+}
+
+function renderTicketOutcome(ticket, manualChunks) {
+  const grounding = buildGroundingDisplay(ticket.grounding_chunk_ids, manualChunks);
   return `
     <div class="template-card ticket-template">
       <div class="template-top">
@@ -120,6 +152,14 @@ function renderTicketOutcome(ticket) {
         <div><span>Queue</span><strong class="kv-value">${escapeHtml(ticket.queue || "-")}</strong></div>
         <div><span>Priority</span><strong class="kv-value">${escapeHtml(ticket.priority || "-")}</strong></div>
         <div><span>Reporter</span><strong class="kv-value">${escapeHtml(ticket.reporter || "-")}</strong></div>
+      </div>
+      <div class="template-section">
+        <p class="block-title">Grounded By</p>
+        <div class="chunk-chip-wrap">${grounding.chunkBadges}</div>
+      </div>
+      <div class="template-section">
+        <p class="block-title">Chunk Context</p>
+        ${grounding.chunkContext}
       </div>
     </div>
   `;
@@ -158,33 +198,7 @@ function renderReplyOutcome(reply, manualChunks) {
     `;
   }
 
-  const groundedIds = Array.isArray(reply.grounding_chunk_ids) ? reply.grounding_chunk_ids : [];
-  const availableChunks = Array.isArray(manualChunks) ? manualChunks : [];
-  const shownChunks = groundedIds.length
-    ? availableChunks.filter((chunk) => groundedIds.includes(chunk.id))
-    : availableChunks;
-  const chunkBadges = Array.isArray(reply.grounding_chunk_ids) && reply.grounding_chunk_ids.length
-    ? reply.grounding_chunk_ids.map((id) => `<span class="chunk-chip">${escapeHtml(id)}</span>`).join("")
-    : "<span class=\"chunk-chip\">No chunk ids</span>";
-  const chunkContext = shownChunks.length
-    ? `
-      <div class="chunk-context-list">
-        ${shownChunks
-          .map(
-            (chunk) => `
-          <article class="chunk-context-card">
-            <p class="chunk-context-head">
-              <strong>${escapeHtml(chunk.id || "UNKNOWN")}</strong>
-              ${chunk.title ? `<span>${escapeHtml(chunk.title)}</span>` : ""}
-            </p>
-            <p class="chunk-context-text">${escapeHtml(chunk.text || "No chunk text available.")}</p>
-          </article>
-        `
-          )
-          .join("")}
-      </div>
-    `
-    : "<p class=\"block-body\">No manual chunk context available.</p>";
+  const grounding = buildGroundingDisplay(reply.grounding_chunk_ids, manualChunks);
   return `
     <div class="template-card reply-template">
       <div class="template-top">
@@ -194,11 +208,11 @@ function renderReplyOutcome(reply, manualChunks) {
       <p class="reply-text">${escapeHtml(reply.reply_draft || "No draft generated.")}</p>
       <div class="template-section">
         <p class="block-title">Grounded By</p>
-        <div class="chunk-chip-wrap">${chunkBadges}</div>
+        <div class="chunk-chip-wrap">${grounding.chunkBadges}</div>
       </div>
       <div class="template-section">
         <p class="block-title">Chunk Context</p>
-        ${chunkContext}
+        ${grounding.chunkContext}
       </div>
     </div>
   `;
@@ -209,13 +223,13 @@ function renderOutput(data) {
   const requestType = data.request_type || extraction.request_type || "unknown";
   const outcomeType = data.outcome_type || "unknown";
   const outcome = data.outcome || {};
-  const manualChunks = Array.isArray(data.question_manual_chunks) ? data.question_manual_chunks : [];
+  const manualChunks = Array.isArray(data.manual_chunks) ? data.manual_chunks : [];
   const missing = Array.isArray(extraction.missing_info_questions) ? extraction.missing_info_questions : [];
   const noInfoReply = outcomeType === "reply_draft" && Boolean(outcome.no_information_found);
 
   let outcomeHtml = `<p class="block-body">No outcome generated.</p>`;
   if (outcomeType === "ticket_entry") {
-    outcomeHtml = renderTicketOutcome(outcome);
+    outcomeHtml = renderTicketOutcome(outcome, manualChunks);
   } else if (outcomeType === "task_sheet") {
     outcomeHtml = renderTaskOutcome(outcome);
   } else if (outcomeType === "reply_draft") {
@@ -243,6 +257,7 @@ function renderOutput(data) {
       <p class="block-title">Extraction Summary</p>
       <p class="block-body"><strong>Summary:</strong> ${escapeHtml(extraction.summary || "no information found")}</p>
       <p class="block-body"><strong>Priority Rationale:</strong> ${escapeHtml(extraction.priority?.rationale || "no information found")}</p>
+      <p class="block-body"><strong>Suggested Next Action:</strong> ${escapeHtml(extraction.suggested_next_action || "no information found")}</p>
     </div>
 
     <div class="block">

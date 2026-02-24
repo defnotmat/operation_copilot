@@ -68,5 +68,20 @@
     "id": "KB_SCHEDULED_EXPORTS_STATUS",
     "title": "Scheduled Exports Feature Status",
     "text": "Scheduled exports are not currently supported natively. Customers must run exports manually. The feature is commonly requested and under consideration. Support should not promise delivery dates."
-  }
+  },
+  {
+  "id": "KB_CLIENT_EXPORT_TROUBLESHOOTING",
+  "title": "Client Steps for Export Failures",
+  "text": "If exports fail, customers should confirm file size is within plan limits, retry after a few minutes, try a smaller export, check network stability, try incognito mode, try another browser, and disable interfering extensions before escalation."
+},
+{
+  "id": "KB_CLIENT_DASHBOARD_TROUBLESHOOTING",
+  "title": "Client Steps for Dashboard Loading Issues",
+  "text": "If dashboards are slow or stuck, customers should refresh the page, try incognito mode, clear cache and cookies, try another browser, verify internet stability, and check whether multiple users are affected."
+},
+{
+  "id": "KB_CLIENT_GENERAL_TROUBLESHOOTING",
+  "title": "General Client-Side Troubleshooting",
+  "text": "For general UI or performance issues, customers should log out and back in, hard refresh, try another browser or device, disable VPN if allowed, check firewall or proxy settings, and ensure the browser is up to date before escalation."
+}
 ]

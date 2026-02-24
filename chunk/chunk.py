@@ -2,7 +2,7 @@ import json
 import re
 from collections import Counter
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 STOPWORDS = {
     "the",
@@ -93,11 +93,29 @@ def load_manual_json_chunks(manual_json_path: Path) -> List[Dict[str, str]]:
     return normalize_manual_chunks(load_json(manual_json_path))
 
 
+def build_manual_chunk_index(chunks: List[Dict[str, str]]) -> List[Dict[str, Any]]:
+    indexed: List[Dict[str, Any]] = []
+    for idx, chunk in enumerate(chunks):
+        haystack = f"{chunk.get('id', '')} {chunk.get('title', '')} {chunk.get('text', '')}"
+        chunk_tokens = tokenize(haystack)
+        chunk_counter = Counter(chunk_tokens)
+        indexed.append(
+            {
+                "idx": idx,
+                "chunk": chunk,
+                "counter": chunk_counter,
+                "token_keys": set(chunk_counter.keys()),
+            }
+        )
+    return indexed
+
+
 def retrieve_top_manual_chunks(
     query: str,
     chunks: List[Dict[str, str]],
     top_k: int = 3,
     require_overlap: bool = False,
+    chunk_index: Optional[List[Dict[str, Any]]] = None,
 ) -> List[Dict[str, str]]:
     if not chunks:
         return []
@@ -107,21 +125,20 @@ def retrieve_top_manual_chunks(
         return [] if require_overlap else chunks[:top_k]
 
     query_counter = Counter(query_tokens)
+    query_token_keys = set(query_counter.keys())
+    active_index = chunk_index if chunk_index is not None else build_manual_chunk_index(chunks)
     scored: List[Any] = []
 
-    for idx, chunk in enumerate(chunks):
-        haystack = f"{chunk.get('id', '')} {chunk.get('title', '')} {chunk.get('text', '')}"
-        chunk_tokens = tokenize(haystack)
-        chunk_counter = Counter(chunk_tokens)
-
-        overlap = set(query_counter.keys()) & set(chunk_counter.keys())
+    for entry in active_index:
+        overlap = query_token_keys & entry["token_keys"]
         if not overlap:
             continue
 
+        chunk_counter = entry["counter"]
         overlap_score = sum(min(query_counter[t], chunk_counter[t]) for t in overlap)
         breadth_bonus = len(overlap)
         score = overlap_score + breadth_bonus
-        scored.append((score, idx, chunk))
+        scored.append((score, entry["idx"], entry["chunk"]))
 
     if not scored:
         return [] if require_overlap else chunks[:top_k]

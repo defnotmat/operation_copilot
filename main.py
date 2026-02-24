@@ -4,7 +4,12 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from flask import Flask, jsonify, render_template, request
-from chunk.chunk import format_manual_context, load_manual_json_chunks, retrieve_top_manual_chunks
+from chunk.chunk import (
+    build_manual_chunk_index,
+    format_manual_context,
+    load_manual_json_chunks,
+    retrieve_top_manual_chunks,
+)
 
 try:
     from openai import OpenAI
@@ -21,7 +26,7 @@ ASSETS_DIR = BASE_DIR / "support_knowledge_base"
 MESSAGES_PATH = ASSETS_DIR / "messages.json"
 SCHEMA_PATH = ASSETS_DIR / "extraction_schema.json"
 ENV_PATH = BASE_DIR / ".env"
-PROMPT_PATH = ASSETS_DIR / "prompt.txt"
+PROMPT_PATH = ASSETS_DIR / "prompt.json"
 MANUAL_JSON_PATH = ASSETS_DIR / "manual.json"
 
 app = Flask(__name__)
@@ -29,6 +34,10 @@ app = Flask(__name__)
 
 class ConfigError(Exception):
     pass
+
+
+_OPENAI_CLIENT: Optional[Any] = None
+_OPENAI_API_KEY_IN_USE: Optional[str] = None
 
 
 def load_env_file() -> None:
@@ -56,9 +65,11 @@ def load_json(path: Path) -> Any:
 
 
 EXTRACTION_SCHEMA = load_json(SCHEMA_PATH)
-SYSTEM_PROMPT = PROMPT_PATH.read_text(encoding="utf-8")
+PROMPTS = load_json(PROMPT_PATH)
+SYSTEM_PROMPT = str(PROMPTS.get("default_system_prompt", "")).strip()
 MESSAGES_DB = load_json(MESSAGES_PATH)
 MANUAL_JSON_CHUNKS = load_manual_json_chunks(MANUAL_JSON_PATH)
+MANUAL_CHUNK_INDEX = build_manual_chunk_index(MANUAL_JSON_CHUNKS)
 load_env_file()
 
 
@@ -146,6 +157,7 @@ def parse_request_type_options(schema: Dict[str, Any]) -> List[str]:
 
 
 def get_openai_client() -> Any:
+    global _OPENAI_CLIENT, _OPENAI_API_KEY_IN_USE
     if OpenAI is None:
         raise ConfigError("openai package is not installed. Install with: pip install openai")
 
@@ -153,18 +165,45 @@ def get_openai_client() -> Any:
     if not api_key:
         raise ConfigError("OPENAI_API_KEY is missing.")
 
-    return OpenAI(api_key=api_key)
+    if _OPENAI_CLIENT is not None and _OPENAI_API_KEY_IN_USE == api_key:
+        return _OPENAI_CLIENT
+
+    _OPENAI_CLIENT = OpenAI(api_key=api_key)
+    _OPENAI_API_KEY_IN_USE = api_key
+    return _OPENAI_CLIENT
 
 
-QUESTION_REPLY_SYSTEM_PROMPT = (
-    "You are a support reply assistant.\n"
-    "Use only the provided manual chunks as factual source.\n"
-    "Do not invent plan details, pricing, or roadmap commitments.\n"
-    "If the manual does not fully answer, state uncertainty briefly and ask a concise follow-up.\n"
-    "IMPORTANT: If the question is not related to the manual at all, or the information is not there, then return No information found.\n"
-    "Leave all other keys in the schema like Summary, Priority Rationale empty.\n"
-    "Return JSON only."
-)
+QUESTION_REPLY_SYSTEM_PROMPT = str(
+    PROMPTS.get("question_reply_system_prompt")
+    or (
+        "You are a support reply assistant.\n"
+        "Use only the provided manual chunks as factual source.\n"
+        "Do not invent plan details, pricing, or roadmap commitments.\n"
+        "If the manual does not fully answer, state uncertainty briefly and ask a concise follow-up.\n"
+        "IMPORTANT: If the question is not related to the manual at all, or the information is not there, then return No information found.\n"
+        "Leave all other keys in the schema like Summary, Priority Rationale empty.\n"
+        "Return JSON only."
+    )
+).strip()
+
+FEATURE_FOLLOWUP_ACTION = str(
+    PROMPTS.get("feature_followup_action")
+    or (
+        'Reach out to customer with the reply: "Thank you for sharing this request. '
+        'We will review it with our product team, evaluate feasibility, and follow up with any updates."'
+    )
+).strip()
+
+BUG_NEXT_ACTION_SYSTEM_PROMPT = str(
+    PROMPTS.get("bug_next_action_system_prompt")
+    or (
+        "You generate `suggested_next_action` for support bug reports.\n"
+        "Use only the provided manual chunks.\n"
+        "Do not invent details.\n"
+        "Return plain text only (no JSON).\n"
+        "If chunks do not provide a relevant next step, return exactly: no suggested action"
+    )
+).strip()
 
 
 def extract_with_llm(selected_message: Dict[str, Any], log_step: Optional[Any] = None) -> Dict[str, Any]:
@@ -217,6 +256,92 @@ def normalize_request_type(value: Any) -> str:
         "question": "question",
     }
     return aliases.get(token, token)
+
+
+def retrieve_bug_manual_chunks(selected_message: Dict[str, Any], log_step: Optional[Any] = None) -> List[Dict[str, str]]:
+    customer_text = str(selected_message.get("message", ""))
+    retrieved_chunks = retrieve_top_manual_chunks(
+        customer_text,
+        MANUAL_JSON_CHUNKS,
+        top_k=3,
+        require_overlap=True,
+        chunk_index=MANUAL_CHUNK_INDEX,
+    )
+    if log_step:
+        ids = ", ".join([chunk.get("id", "UNKNOWN") for chunk in retrieved_chunks]) or "none"
+        log_step("bug_manual_retrieval_done", f"Retrieved manual chunks for bug next steps: {ids}")
+    return retrieved_chunks
+
+
+def build_bug_next_action_from_manual(
+    selected_message: Dict[str, Any],
+    extraction: Dict[str, Any],
+    retrieved_chunks: Optional[List[Dict[str, str]]] = None,
+    log_step: Optional[Any] = None,
+) -> str:
+    if retrieved_chunks is None:
+        retrieved_chunks = retrieve_bug_manual_chunks(selected_message, log_step=log_step)
+
+    if not retrieved_chunks:
+        if log_step:
+            log_step("bug_manual_not_found", "No relevant manual context found for bug next action.")
+        return "no suggested action"
+
+    model = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
+    client = get_openai_client()
+    prompt = (
+        "Customer bug message:\n"
+        f"{json.dumps(selected_message, ensure_ascii=True)}\n\n"
+        "Structured extraction:\n"
+        f"{json.dumps(extraction, ensure_ascii=True)}\n\n"
+        "Relevant manual chunks:\n"
+        f"{format_manual_context(retrieved_chunks)}\n\n"
+        "Write one concise suggested_next_action for the support team, grounded in the chunks."
+    )
+    if log_step:
+        log_step("bug_next_action_llm_start", f"Calling model: {model}")
+
+    response = client.chat.completions.create(
+        model=model,
+        messages=[
+            {"role": "system", "content": BUG_NEXT_ACTION_SYSTEM_PROMPT},
+            {"role": "user", "content": prompt},
+        ],
+        temperature=0,
+    )
+    if log_step:
+        log_step("bug_next_action_llm_done", "Generated bug suggested_next_action from manual chunks.")
+
+    text = (response.choices[0].message.content or "").strip()
+    if not text:
+        return "no suggested action"
+    return text
+
+
+def apply_route_specific_suggested_action(
+    selected_message: Dict[str, Any],
+    extraction: Dict[str, Any],
+    log_step: Optional[Any] = None,
+) -> Dict[str, Any]:
+    updated = dict(extraction)
+    req_type = normalize_request_type(updated.get("request_type") or selected_message.get("request_type"))
+    updated["request_type"] = req_type
+    route_manual_chunks: List[Dict[str, str]] = []
+
+    if req_type == "bug_report":
+        route_manual_chunks = retrieve_bug_manual_chunks(selected_message, log_step=log_step)
+        updated["suggested_next_action"] = build_bug_next_action_from_manual(
+            selected_message,
+            extraction=updated,
+            retrieved_chunks=route_manual_chunks,
+            log_step=log_step,
+        )
+    elif req_type == "feature_request":
+        if log_step:
+            log_step("feature_action_standardized", "Applied standard professional follow-up reply for feature request.")
+        updated["suggested_next_action"] = FEATURE_FOLLOWUP_ACTION
+
+    return {"extraction": updated, "route_manual_chunks": route_manual_chunks}
 
 
 def build_bug_ticket_entry(selected_message: Dict[str, Any], extraction: Dict[str, Any]) -> Dict[str, Any]:
@@ -293,6 +418,7 @@ def generate_question_reply_with_manual(
         MANUAL_JSON_CHUNKS,
         top_k=3,
         require_overlap=True,
+        chunk_index=MANUAL_CHUNK_INDEX,
     )
     if log_step:
         ids = ", ".join([chunk.get("id", "UNKNOWN") for chunk in retrieved_chunks]) or "none"
@@ -307,7 +433,7 @@ def generate_question_reply_with_manual(
             "message_id": selected_message.get("id", "unknown"),
             "reply_draft": "Information you are looking for is not found in the manual.",
             "grounding_chunk_ids": [],
-            "used_manual_chunks": [],
+            "manual_chunks": [],
             "no_information_found": True,
         }
 
@@ -349,7 +475,7 @@ def generate_question_reply_with_manual(
         "message_id": selected_message.get("id", "unknown"),
         "reply_draft": reply_draft,
         "grounding_chunk_ids": [str(item) for item in chunk_ids],
-        "used_manual_chunks": retrieved_chunks,
+        "manual_chunks": retrieved_chunks,
         "no_information_found": False,
     }
 
@@ -367,9 +493,11 @@ def build_empty_extraction_for_unknown_question() -> Dict[str, Any]:
 def build_outcome(
     selected_message: Dict[str, Any],
     extraction: Dict[str, Any],
+    route_manual_chunks: Optional[List[Dict[str, str]]] = None,
     log_step: Optional[Any] = None,
 ) -> Dict[str, Any]:
     req_type = normalize_request_type(extraction.get("request_type") or selected_message.get("request_type"))
+    route_manual_chunks = route_manual_chunks or []
     allowed = {"bug_report", "feature_request", "question"}
     if req_type not in allowed:
         req_type = normalize_request_type(selected_message.get("request_type"))
@@ -379,11 +507,14 @@ def build_outcome(
     if req_type == "bug_report":
         if log_step:
             log_step("outcome_route_selected", "Route selected: bug_report -> internal ticket entry.")
+        chunk_ids = [chunk.get("id", "UNKNOWN") for chunk in route_manual_chunks]
+        ticket_payload = build_bug_ticket_entry(selected_message, extraction)
+        ticket_payload["grounding_chunk_ids"] = chunk_ids
         return {
             "outcome_type": "ticket_entry",
             "request_type": req_type,
-            "outcome": build_bug_ticket_entry(selected_message, extraction),
-            "question_manual_chunks": [],
+            "outcome": ticket_payload,
+            "manual_chunks": route_manual_chunks,
         }
     elif req_type == "feature_request":
         if log_step:
@@ -392,18 +523,18 @@ def build_outcome(
             "outcome_type": "task_sheet",
             "request_type": req_type,
             "outcome": build_feature_task_sheet(selected_message, extraction),
-            "question_manual_chunks": [],
+            "manual_chunks": [],
         }
 
     if log_step:
         log_step("outcome_route_selected", "Route selected: question -> manual-grounded customer reply.")
     reply_payload = generate_question_reply_with_manual(selected_message, extraction, log_step=log_step)
-    question_chunks = reply_payload.pop("used_manual_chunks", [])
+    question_chunks = reply_payload.pop("manual_chunks", [])
     return {
         "outcome_type": "reply_draft",
         "request_type": "question",
         "outcome": reply_payload,
-        "question_manual_chunks": question_chunks,
+        "manual_chunks": question_chunks,
     }
 
 
@@ -446,8 +577,14 @@ def extract() -> Any:
         add_log("input_resolved", f"Resolved input id={selected_message.get('id', 'unknown')}.")
 
         llm_result = extract_with_llm(selected_message, log_step=add_log)
-        extracted = llm_result["extraction"]
-        outcome_data = build_outcome(selected_message, extracted, log_step=add_log)
+        action_result = apply_route_specific_suggested_action(selected_message, llm_result["extraction"], log_step=add_log)
+        extracted = action_result["extraction"]
+        outcome_data = build_outcome(
+            selected_message,
+            extracted,
+            route_manual_chunks=action_result.get("route_manual_chunks", []),
+            log_step=add_log,
+        )
         if (
             outcome_data.get("outcome_type") == "reply_draft"
             and isinstance(outcome_data.get("outcome"), dict)
@@ -463,10 +600,7 @@ def extract() -> Any:
                 "request_type": outcome_data["request_type"],
                 "outcome_type": outcome_data["outcome_type"],
                 "outcome": outcome_data["outcome"],
-                "question_manual_chunk_ids": [
-                    chunk.get("id", "UNKNOWN") for chunk in outcome_data.get("question_manual_chunks", [])
-                ],
-                "question_manual_chunks": outcome_data.get("question_manual_chunks", []),
+                "manual_chunks": outcome_data.get("manual_chunks", []),
                 "model": os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
                 "pipeline_logs": pipeline_logs,
             }

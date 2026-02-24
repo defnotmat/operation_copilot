@@ -1,0 +1,71 @@
+1. Reworked routing so outputs diverge by request type:
+- Bug -> internal ticket output
+- Feature -> task sheet output
+- Question -> grounded reply draft output
+
+2. Refactored retrieval logic into `chunk/chunk.py`:
+- Centralized tokenization, normalization, overlap scoring, chunk formatting
+- Kept `main.py` focused on extraction + routing orchestration
+
+3. Migrated prompt config from `prompt.txt` to `prompt.json`:
+- Added `default_system_prompt`
+- Added question-specific system prompt
+- Added standardized feature follow-up action text
+- Added bug next-action system prompt
+
+4. Updated message parsing and sample data handling:
+- Supported list-based message groups by request type
+- Added and normalized new sample IDs and UI labels
+- Ensured frontend selection/rendering works with updated schema
+
+5. Implemented retrieval-grounded question reliability behavior:
+- If no relevant manual chunks: return “Information you are looking for is not found in the manual.”
+- Clear extraction fields for unrelated questions
+- Show no grounding IDs/context when ungrounded
+
+6. Implemented retrieval-grounded bug suggested actions:
+- Retrieve relevant manual chunks for bug reports
+- Generate `suggested_next_action` from retrieved chunks
+- If no relevant bug chunks: return exactly `no suggested action`
+
+7. Kept feature route follow-up deterministic:
+- Always produce professional standardized follow-up action
+- No retrieval dependency for feature suggested action
+
+8. Extended backend outcome payloads for grounding transparency:
+- Added chunk IDs and chunk context payloads for routed outputs
+- Exposed manual chunk metadata needed by UI
+
+9. Updated UI outcome rendering:
+- Different visual templates per route (ticket/task/reply)
+- Added Grounded By + Chunk Context for question and bug routes
+- Added optional expandable Raw Extraction JSON section
+- Reset output area when request/sample changes before pipeline run
+- Added compact 3-step mini pipeline indicator
+
+10. Applied UI consistency fixes:
+- Unified green accent usage across ticket/reply/feature elements
+- Matched template kicker/id color styles between ticket and feature cards
+- Fixed long reporter values in ticket grid via wrapping behavior
+
+11. Edge-case handling applied throughout:
+- Conservative request-type normalization and fallback routing
+- Missing/empty fields default to safe placeholders
+- No-manual/no-overlap scenarios handled without crashes
+- JSON schema key validation on extraction outputs
+- Graceful API error paths with lightweight pipeline logs
+
+12. Improvement point: retrieval pre-index for speed (no behavior change):
+- Added one-time manual chunk indexing at startup
+- Reused indexed token counters/sets during scoring instead of rebuilding per request
+- Kept ranking logic and retrieval outputs exactly the same
+
+13. Improvement point: OpenAI client reuse (no behavior change):
+- Added cached OpenAI client reuse across calls
+- Rebuilds only when API key changes
+- Reduced per-request client construction overhead
+
+14. Improvement point: grounding payload de-duplication (no behavior change):
+- Removed redundant grounding fields from backend responses
+- Kept one canonical `manual_chunks` container for UI grounding context
+- Updated frontend to read only canonical grounding payload while preserving same rendered result
