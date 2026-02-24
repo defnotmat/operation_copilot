@@ -1,18 +1,36 @@
 {
-  "bug_report": {
-    "id": "B_001",
-    "ui_label": "Export Failure Bug",
-    "source": "Email",
-    "sender": "finance@acme.com",
-    "message": "Hi—since yesterday our exports fail with Error 502 when file > 200MB. We’re on Pro plan. This blocks our month-end close. Can you help?"
-  },
-  "feature_request": {
-    "id": "F_001",
-    "ui_label": "Scheduled Exports Request",
-    "source": "Slack",
-    "sender": "ops@startup.io",
-    "message": "It would be great if exports could be scheduled automatically every week instead of manual runs."
-  },
+  "bug_report": [
+    {
+      "id": "B_001",
+      "ui_label": "Export Failure Bug",
+      "source": "Email",
+      "sender": "finance@acme.com",
+      "message": "Hi—since yesterday our exports fail with Error 502 when file > 200MB. We’re on Pro plan. This blocks our month-end close. Can you help?"
+    },
+    {
+      "id": "B_002",
+      "ui_label": "Dashboard Loading Incident",
+      "source": "Slack",
+      "sender": "maria@globex.com",
+      "message": "The dashboard is stuck loading for multiple users in our workspace. Started about an hour ago. Urgent."
+    }
+  ],
+  "feature_request": [
+    {
+      "id": "F_001",
+      "ui_label": "Scheduled Exports Request",
+      "source": "Slack",
+      "sender": "ops@startup.io",
+      "message": "It would be great if exports could be scheduled automatically every week instead of manual runs."
+    },
+    {
+      "id": "Feat_001",
+      "ui_label": "Okta SSO and SCIM Request",
+      "source": "Email",
+      "sender": "it@bigco.com",
+      "message": "Any chance you can add SSO via Okta and allow SCIM user provisioning? We have around 400 seats."
+    }
+  ],
   "question": [
     {
       "id": "Q_001",
