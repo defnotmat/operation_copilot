@@ -18,6 +18,11 @@ const MINI_STEPS = [
   "Build Route Template",
   "Finalize Outcome"
 ];
+const STEP_TRANSITION_MS = 220;
+
+function delay(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
 
 function renderMiniSteps(currentStep = 0, mode = "idle", note = "Run the routing pipeline to generate an outcome.") {
   const steps = MINI_STEPS.map((label, index) => {
@@ -349,10 +354,12 @@ async function runPipeline() {
 
   outputEl.classList.add("empty");
   outputEl.textContent = "Running...";
-  renderMiniSteps(0, "running", "Resolving selected message.");
 
   runBtnEl.disabled = true;
   try {
+    renderMiniSteps(0, "running", "Resolving selected message.");
+    await delay(STEP_TRANSITION_MS);
+
     renderMiniSteps(1, "running", "Extracting request details.");
     const response = await fetch("/extract", {
       method: "POST",
@@ -361,6 +368,8 @@ async function runPipeline() {
     });
 
     const data = await response.json();
+    await delay(STEP_TRANSITION_MS);
+
     renderMiniSteps(2, "running", "Routing request to the correct path.");
 
     if (!response.ok) {
@@ -369,7 +378,10 @@ async function runPipeline() {
       return;
     }
 
+    await delay(STEP_TRANSITION_MS);
     renderMiniSteps(3, "running", "Building route-specific output template.");
+    await delay(STEP_TRANSITION_MS);
+
     renderOutput(data);
     renderMiniSteps(4, "done", "Outcome ready.");
   } catch (error) {
