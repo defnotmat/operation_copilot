@@ -5,8 +5,14 @@ import requests
 
 
 def _notion_title(text: str) -> Dict[str, Any]:
-    # Notion "title" property expects a list of rich-text objects
-    return {"title": [{"type": "text", "text": {"content": text}}]}
+    return {
+        "title": [
+            {
+                "type": "text",
+                "text": {"content": text},
+            }
+        ]
+    }
 
 
 def _notion_rich_text(text: str) -> Dict[str, Any]:
@@ -33,9 +39,9 @@ def send_feature_request_to_notion(
 
     token = os.getenv("NOTION_TOKEN", "").strip()
     notion_version = os.getenv("NOTION_VERSION", "2025-09-03").strip()
-    data_source_id = os.getenv("NOTION_DATA_SOURCE_ID", "").strip()
+    database_id = os.getenv("NOTION_DATABASE_ID", "").strip()
 
-    if not token or not data_source_id:
+    if not token or not database_id:
         if log_step:
             log_step("notion_sync_skipped", "NOTION_TOKEN or NOTION_DATA_SOURCE_ID missing.")
         return {"sent": False, "status": "missing_config"}
@@ -45,11 +51,11 @@ def send_feature_request_to_notion(
     priority_level = str(priority.get("level", "P3")).strip() or "P3"
 
     payload: Dict[str, Any] = {
-        "parent": {"type": "data_source_id", "data_source_id": data_source_id},
+        "parent": {"database_id": database_id},
         "properties": {
             "Title": _notion_title(str(task_sheet.get("title", "Feature request"))),
             "Request ID": _notion_rich_text(str(task_sheet.get("task_id", ""))),
-            "Priority": {"multi_select": [{"name": priority_level}]},
+            "Priority": {"select": {"name": priority_level}},
             "Priority Rationale": _notion_rich_text(str(priority.get("rationale", ""))),
             "Sender": _notion_rich_text(str(selected_message.get("sender", ""))),
             "Source": _notion_rich_text(str(selected_message.get("source", ""))),
@@ -58,12 +64,14 @@ def send_feature_request_to_notion(
         },
     }
 
+
     url = "https://api.notion.com/v1/pages"
     headers = {
         "Authorization": f"Bearer {token}",
         "Notion-Version": notion_version,
         "Content-Type": "application/json",
     }
+
 
     if log_step:
         log_step("notion_sync_start", "Sending feature task to Notion.")
@@ -75,6 +83,9 @@ def send_feature_request_to_notion(
             headers=headers,
             timeout=15,  # prevent hanging
         )
+
+        print("🔵 NOTION STATUS:", response.status_code)
+        print("🔵 NOTION RESPONSE:", response.text)
 
         # Raise HTTPError for 4xx/5xx
         response.raise_for_status()
