@@ -11,13 +11,19 @@ const state = {
   messages: []
 };
 
-const MINI_STEPS = ["Resolve Input", "Extract Request", "Build Outcome"];
+const MINI_STEPS = [
+  "Resolve Input",
+  "Extract Request",
+  "Route Request Type",
+  "Build Route Template",
+  "Finalize Outcome"
+];
 
 function renderMiniSteps(currentStep = 0, mode = "idle", note = "Run the routing pipeline to generate an outcome.") {
   const steps = MINI_STEPS.map((label, index) => {
     let cls = "mini-step";
     if (mode === "done") {
-      cls += " done";
+      if (index <= currentStep) cls += " done";
     } else if (mode === "running") {
       if (index < currentStep) cls += " done";
       else if (index === currentStep) cls += " active";
@@ -107,15 +113,33 @@ function renderList(items, emptyLabel = "No items") {
   return `<ul class="missing-list">${items.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>`;
 }
 
-function buildGroundingDisplay(groundingChunkIds, manualChunks) {
+function renderCollapsibleBlock(title, targetId, content, wide = false) {
+  const blockClass = wide ? "block block-wide" : "block";
+  const safeTitle = escapeHtml(title);
+  const safeTargetId = escapeHtml(targetId);
+  return `
+    <div class="${blockClass}">
+      <div class="raw-json-head">
+        <p class="block-title">${safeTitle}</p>
+        <button
+          type="button"
+          class="json-toggle-btn is-collapsed"
+          data-target="${safeTargetId}"
+          aria-label="Show ${safeTitle}"
+          aria-pressed="false"
+        ></button>
+      </div>
+      <div id="${safeTargetId}" class="collapsible-content collapsed">${content}</div>
+    </div>
+  `;
+}
+
+function buildChunkContext(groundingChunkIds, manualChunks) {
   const groundedIds = Array.isArray(groundingChunkIds) ? groundingChunkIds : [];
   const availableChunks = Array.isArray(manualChunks) ? manualChunks : [];
   const shownChunks = groundedIds.length
     ? availableChunks.filter((chunk) => groundedIds.includes(chunk.id))
     : availableChunks;
-  const chunkBadges = groundedIds.length
-    ? groundedIds.map((id) => `<span class="chunk-chip">${escapeHtml(id)}</span>`).join("")
-    : "<span class=\"chunk-chip\">No chunk ids</span>";
   const chunkContext = shownChunks.length
     ? `
       <div class="chunk-context-list">
@@ -135,11 +159,10 @@ function buildGroundingDisplay(groundingChunkIds, manualChunks) {
       </div>
     `
     : "<p class=\"block-body\">No manual chunk context available.</p>";
-  return { chunkBadges, chunkContext };
+  return chunkContext;
 }
 
-function renderTicketOutcome(ticket, manualChunks) {
-  const grounding = buildGroundingDisplay(ticket.grounding_chunk_ids, manualChunks);
+function renderTicketOutcome(ticket) {
   return `
     <div class="template-card ticket-template">
       <div class="template-top">
@@ -152,32 +175,25 @@ function renderTicketOutcome(ticket, manualChunks) {
         <div><span>Queue</span><strong class="kv-value">${escapeHtml(ticket.queue || "-")}</strong></div>
         <div><span>Priority</span><strong class="kv-value">${escapeHtml(ticket.priority || "-")}</strong></div>
         <div><span>Reporter</span><strong class="kv-value">${escapeHtml(ticket.reporter || "-")}</strong></div>
-      </div>
-      <div class="template-section">
-        <p class="block-title">Grounded By</p>
-        <div class="chunk-chip-wrap">${grounding.chunkBadges}</div>
-      </div>
-      <div class="template-section">
-        <p class="block-title">Chunk Context</p>
-        ${grounding.chunkContext}
+        <div class="kv-wide"><span>Priority Rationale</span><strong class="kv-value">${escapeHtml(ticket.triage_rationale || "no information found")}</strong></div>
       </div>
     </div>
   `;
 }
 
-function renderTaskOutcome(task) {
+function renderTaskOutcome(task, extraction) {
   return `
     <div class="template-card task-template">
       <div class="template-top">
         <span class="template-kicker">Feature Task Sheet</span>
         <span class="template-id">${escapeHtml(task.task_id || "FEAT-UNKNOWN")}</span>
       </div>
-      <h3>${escapeHtml(task.title || "No summary")}</h3>
       <table class="task-table">
         <tr><th>Workspace</th><td>${escapeHtml(task.workspace || "-")}</td></tr>
         <tr><th>Status</th><td>${escapeHtml(task.status || "-")}</td></tr>
         <tr><th>Owner Team</th><td>${escapeHtml(task.owner_team || "-")}</td></tr>
         <tr><th>Impact Priority</th><td>${escapeHtml(task.impact_priority || "-")}</td></tr>
+        <tr><th>Priority Rationale</th><td>${escapeHtml(extraction.priority?.rationale || "no information found")}</td></tr>
         <tr><th>Requester</th><td>${escapeHtml(task.requester || "-")}</td></tr>
         <tr><th>Source</th><td>${escapeHtml(task.source || "-")}</td></tr>
       </table>
@@ -185,7 +201,10 @@ function renderTaskOutcome(task) {
   `;
 }
 
-function renderReplyOutcome(reply, manualChunks) {
+function renderReplyOutcome(reply, extraction) {
+  const priorityLevel = extraction?.priority?.level || "";
+  const priorityRationale = extraction?.priority?.rationale || "no information found";
+  const priorityWithLevel = priorityLevel ? `${priorityLevel} - ${priorityRationale}` : priorityRationale;
   if (reply.no_information_found) {
     return `
       <div class="template-card reply-template">
@@ -194,11 +213,13 @@ function renderReplyOutcome(reply, manualChunks) {
           <span class="template-id">${escapeHtml(reply.message_id || "Q-UNKNOWN")}</span>
         </div>
         <p class="reply-text">${escapeHtml(reply.reply_draft || "Information you are looking for is not found in the manual.")}</p>
+        <div class="kv-grid">
+          <div class="kv-wide"><span>Priority Rationale</span><strong class="kv-value">${escapeHtml(priorityWithLevel)}</strong></div>
+        </div>
       </div>
     `;
   }
 
-  const grounding = buildGroundingDisplay(reply.grounding_chunk_ids, manualChunks);
   return `
     <div class="template-card reply-template">
       <div class="template-top">
@@ -206,13 +227,8 @@ function renderReplyOutcome(reply, manualChunks) {
         <span class="template-id">${escapeHtml(reply.message_id || "Q-UNKNOWN")}</span>
       </div>
       <p class="reply-text">${escapeHtml(reply.reply_draft || "No draft generated.")}</p>
-      <div class="template-section">
-        <p class="block-title">Grounded By</p>
-        <div class="chunk-chip-wrap">${grounding.chunkBadges}</div>
-      </div>
-      <div class="template-section">
-        <p class="block-title">Chunk Context</p>
-        ${grounding.chunkContext}
+      <div class="kv-grid">
+        <div class="kv-wide"><span>Priority Rationale</span><strong class="kv-value">${escapeHtml(priorityWithLevel)}</strong></div>
       </div>
     </div>
   `;
@@ -226,14 +242,54 @@ function renderOutput(data) {
   const manualChunks = Array.isArray(data.manual_chunks) ? data.manual_chunks : [];
   const missing = Array.isArray(extraction.missing_info_questions) ? extraction.missing_info_questions : [];
   const noInfoReply = outcomeType === "reply_draft" && Boolean(outcome.no_information_found);
+  const isBugTicket = outcomeType === "ticket_entry";
+  const isFeatureTask = outcomeType === "task_sheet";
+  const isQuestionReply = outcomeType === "reply_draft";
 
   let outcomeHtml = `<p class="block-body">No outcome generated.</p>`;
+  let sideBlocksHtml = "";
   if (outcomeType === "ticket_entry") {
-    outcomeHtml = renderTicketOutcome(outcome, manualChunks);
+    outcomeHtml = renderTicketOutcome(outcome);
+    const chunkContext = buildChunkContext(outcome.grounding_chunk_ids, manualChunks);
+    sideBlocksHtml = `
+      <div class="block">
+        <p class="block-title">Suggested Next Action</p>
+        <p class="block-body">${escapeHtml(extraction.suggested_next_action || outcome.next_internal_action || "no information found")}</p>
+      </div>
+
+      <div class="block">
+        <p class="block-title">Missing Information Questions</p>
+        ${renderList(missing, "No missing information questions.")}
+      </div>
+
+      ${renderCollapsibleBlock("Chunk Context", "chunk-context-view", chunkContext, true)}
+    `;
   } else if (outcomeType === "task_sheet") {
-    outcomeHtml = renderTaskOutcome(outcome);
+    outcomeHtml = renderTaskOutcome(outcome, extraction);
+    sideBlocksHtml = `
+      <div class="block">
+        <p class="block-title">Suggested Steps</p>
+        <p class="block-body">${escapeHtml(extraction.suggested_next_action || outcome.proposed_next_step || "no information found")}</p>
+      </div>
+
+      <div class="block">
+        <p class="block-title">Questions</p>
+        ${renderList(missing, "No missing information questions.")}
+      </div>
+    `;
   } else if (outcomeType === "reply_draft") {
-    outcomeHtml = renderReplyOutcome(outcome, manualChunks);
+    outcomeHtml = renderReplyOutcome(outcome, extraction);
+    if (!noInfoReply) {
+      const chunkContext = buildChunkContext(outcome.grounding_chunk_ids, manualChunks);
+      sideBlocksHtml = `
+        <div class="block block-wide">
+          <p class="block-title">Missing Information Questions</p>
+          ${renderList(missing, "No missing information questions.")}
+        </div>
+
+        ${renderCollapsibleBlock("Chunk Context", "chunk-context-view", chunkContext, true)}
+      `;
+    }
   }
 
   outputEl.classList.remove("empty");
@@ -244,35 +300,36 @@ function renderOutput(data) {
       <span class="badge">Outcome ${escapeHtml(prettyLabel(outcomeType))}</span>
     </div>
 
-    <div class="block">
-      <p class="block-title">Routed Outcome</p>
-      ${outcomeHtml}
-    </div>
-
-    ${
-      noInfoReply
-        ? ""
-        : `
-    <div class="block">
-      <p class="block-title">Extraction Summary</p>
-      <p class="block-body"><strong>Summary:</strong> ${escapeHtml(extraction.summary || "no information found")}</p>
-      <p class="block-body"><strong>Priority Rationale:</strong> ${escapeHtml(extraction.priority?.rationale || "no information found")}</p>
-      <p class="block-body"><strong>Suggested Next Action:</strong> ${escapeHtml(extraction.suggested_next_action || "no information found")}</p>
-    </div>
-
-    <div class="block">
-      <p class="block-title">Missing Information Questions</p>
-      ${renderList(missing, "No missing information questions.")}
-    </div>
-    `
-    }
-
-    <div class="block">
-      <div class="raw-json-head">
-        <p class="block-title">Raw Extraction JSON</p>
-        <button type="button" class="json-toggle-btn" data-target="raw-json-pre">Unfold</button>
+    <div class="outcome-layout">
+      <div class="block block-wide">
+        <p class="block-title">Routed Outcome</p>
+        ${outcomeHtml}
       </div>
-      <pre id="raw-json-pre" class="raw-json-pre collapsed">${JSON.stringify({ extraction, outcome_type: outcomeType, outcome }, null, 2)}</pre>
+
+      ${isBugTicket || isFeatureTask || isQuestionReply ? sideBlocksHtml : (
+        noInfoReply
+          ? ""
+          : `
+      <div class="block">
+        <p class="block-title">Extraction Summary</p>
+        <p class="block-body"><strong>Summary:</strong> ${escapeHtml(extraction.summary || "no information found")}</p>
+        <p class="block-body"><strong>Priority Rationale:</strong> ${escapeHtml(extraction.priority?.rationale || "no information found")}</p>
+        <p class="block-body"><strong>Suggested Next Action:</strong> ${escapeHtml(extraction.suggested_next_action || "no information found")}</p>
+      </div>
+
+      <div class="block">
+        <p class="block-title">Missing Information Questions</p>
+        ${renderList(missing, "No missing information questions.")}
+      </div>
+      `
+      )}
+
+      ${renderCollapsibleBlock(
+        "Raw Extraction JSON",
+        "raw-json-view",
+        `<pre class="raw-json-pre">${escapeHtml(JSON.stringify({ outcome_type: outcomeType, outcome }, null, 2))}</pre>`,
+        true
+      )}
     </div>
   `;
 }
@@ -304,7 +361,7 @@ async function runPipeline() {
     });
 
     const data = await response.json();
-    renderMiniSteps(2, "running", "Building routed outcome.");
+    renderMiniSteps(2, "running", "Routing request to the correct path.");
 
     if (!response.ok) {
       renderMiniSteps(2, "error", data.error || "Could not finish this run.");
@@ -312,10 +369,11 @@ async function runPipeline() {
       return;
     }
 
+    renderMiniSteps(3, "running", "Building route-specific output template.");
     renderOutput(data);
-    renderMiniSteps(2, "done", "Outcome ready.");
+    renderMiniSteps(4, "done", "Outcome ready.");
   } catch (error) {
-    renderMiniSteps(1, "error", "Something interrupted the request. Please try again.");
+    renderMiniSteps(2, "error", "Something interrupted the request. Please try again.");
     renderError("Something interrupted the request. Please try again.");
   } finally {
     runBtnEl.disabled = false;
@@ -395,7 +453,10 @@ outputEl.addEventListener("click", (event) => {
   if (!targetEl) return;
 
   const isCollapsed = targetEl.classList.toggle("collapsed");
-  toggleBtn.textContent = isCollapsed ? "Unfold" : "Fold";
+  toggleBtn.classList.toggle("is-collapsed", isCollapsed);
+  toggleBtn.classList.toggle("is-visible", !isCollapsed);
+  toggleBtn.setAttribute("aria-label", isCollapsed ? "Show content" : "Hide content");
+  toggleBtn.setAttribute("aria-pressed", isCollapsed ? "false" : "true");
 });
 
 runBtnEl.addEventListener("click", runPipeline);
