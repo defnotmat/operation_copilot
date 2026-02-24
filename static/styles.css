@@ -349,7 +349,7 @@ h3 {
 }
 
 .ticket-template .template-kicker,
-.task-template .task-kicker,
+.task-template .template-kicker,
 .reply-template .template-kicker {
   color: #b7ffeb;
 }
