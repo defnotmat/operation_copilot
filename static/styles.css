@@ -354,6 +354,7 @@ h3 {
 }
 
 .ticket-template .template-id,
+.task-template .template-id,
 .reply-template .template-id {
   border-color: rgba(126, 243, 204, 0.35);
   color: #d8fff2;
