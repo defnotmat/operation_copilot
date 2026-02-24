@@ -201,8 +201,11 @@ function renderOutput(data) {
     </div>
 
     <div class="block">
-      <p class="block-title">Raw Extraction JSON</p>
-      <pre>${JSON.stringify({ extraction, outcome_type: outcomeType, outcome }, null, 2)}</pre>
+      <div class="raw-json-head">
+        <p class="block-title">Raw Extraction JSON</p>
+        <button type="button" class="json-toggle-btn" data-target="raw-json-pre">Unfold</button>
+      </div>
+      <pre id="raw-json-pre" class="raw-json-pre collapsed">${JSON.stringify({ extraction, outcome_type: outcomeType, outcome }, null, 2)}</pre>
     </div>
   `;
 }
@@ -298,7 +301,23 @@ async function init() {
 requestTypeEl.addEventListener("change", (event) => {
   const requestType = event.target.value;
   renderMessagePreview(requestType);
+  outputEl.classList.add("empty");
+  outputEl.textContent = "No output yet.";
   renderMiniSteps(0, "idle", `Selected ${prettyLabel(requestType)}. Run pipeline.`);
+});
+
+outputEl.addEventListener("click", (event) => {
+  const toggleBtn = event.target.closest(".json-toggle-btn");
+  if (!toggleBtn) return;
+
+  const targetId = toggleBtn.getAttribute("data-target");
+  if (!targetId) return;
+
+  const targetEl = outputEl.querySelector(`#${targetId}`);
+  if (!targetEl) return;
+
+  const isCollapsed = targetEl.classList.toggle("collapsed");
+  toggleBtn.textContent = isCollapsed ? "Unfold" : "Fold";
 });
 
 runBtnEl.addEventListener("click", runPipeline);

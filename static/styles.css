@@ -490,6 +490,32 @@ h3 {
   overflow-wrap: anywhere;
 }
 
+.raw-json-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.json-toggle-btn {
+  padding: 5px 9px;
+  border-radius: 8px;
+  border: 1px solid rgba(149, 168, 255, 0.42);
+  background: rgba(92, 122, 255, 0.14);
+  color: #d9e6ff;
+  font-size: 0.74rem;
+  font-weight: 700;
+}
+
+.json-toggle-btn:hover {
+  filter: brightness(1.04);
+}
+
+.raw-json-pre.collapsed {
+  display: none;
+}
+
 pre {
   margin: 0;
   background: rgba(7, 10, 26, 0.88);
