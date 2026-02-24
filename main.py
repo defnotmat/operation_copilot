@@ -10,6 +10,7 @@ from chunk.chunk import (
     load_manual_json_chunks,
     retrieve_top_manual_chunks,
 )
+from notion.notion import send_feature_request_to_notion
 
 try:
     from openai import OpenAI
@@ -654,6 +655,16 @@ def extract() -> Any:
             and outcome_data["outcome"].get("no_information_found")
         ):
             extracted = build_empty_extraction_for_unknown_question()
+
+        notion_sync: Optional[Dict[str, Any]] = None
+        if outcome_data.get("outcome_type") == "task_sheet":
+            notion_sync = send_feature_request_to_notion(
+                selected_message=selected_message,
+                extraction=extracted,
+                task_sheet=outcome_data.get("outcome", {}),
+                log_step=add_log,
+            )
+
         add_log("pipeline_complete", "Request processed with route-specific outcome.")
 
         return jsonify(
@@ -664,6 +675,7 @@ def extract() -> Any:
                 "outcome_type": outcome_data["outcome_type"],
                 "outcome": outcome_data["outcome"],
                 "manual_chunks": outcome_data.get("manual_chunks", []),
+                "notion_sync": notion_sync,
                 "model": os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
                 "pipeline_logs": pipeline_logs,
             }
