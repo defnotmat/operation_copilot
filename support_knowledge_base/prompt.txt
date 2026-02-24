@@ -49,9 +49,14 @@ suggested_next_action:
 missing_info_questions:
 - Include useful follow-up questions when key details are missing
 - Return "All information is present." text ONLY if the message already contains sufficient detail
+- For `bug_report`, you must ask for missing diagnostic details aggressively.
+- For `bug_report`, if workspace/account/client ID is not explicitly present, include a question asking for it.
+- For `bug_report`, if screenshot, error ID, or logs are not explicitly present, include a question asking for one of them.
+- For `bug_report`, when these details are missing, do not return "All information is present."
 
 When relevant, ask for items such as:
 - workspace or account ID
+- client ID
 - plan tier
 - screenshots or error IDs
 - reproducibility details

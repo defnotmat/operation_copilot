@@ -1,7 +1,7 @@
 const requestTypeEl = document.getElementById("requestType");
 const runBtnEl = document.getElementById("runBtn");
 const messageCardEl = document.getElementById("messageCard");
-const logsEl = document.getElementById("logs");
+const miniStepsEl = document.getElementById("miniSteps");
 const outputEl = document.getElementById("output");
 
 const state = {
@@ -10,16 +10,27 @@ const state = {
   messages: []
 };
 
-function addLog(text, tone = "info") {
-  const item = document.createElement("div");
-  item.className = `log-item log-${tone}`;
-  item.textContent = text;
-  logsEl.appendChild(item);
-  logsEl.scrollTop = logsEl.scrollHeight;
-}
+const MINI_STEPS = ["Resolve Input", "Extract Request", "Build Outcome"];
 
-function clearLogs() {
-  logsEl.innerHTML = "";
+function renderMiniSteps(currentStep = 0, mode = "idle", note = "Run the routing pipeline to generate an outcome.") {
+  const steps = MINI_STEPS.map((label, index) => {
+    let cls = "mini-step";
+    if (mode === "done") {
+      cls += " done";
+    } else if (mode === "running") {
+      if (index < currentStep) cls += " done";
+      else if (index === currentStep) cls += " active";
+    } else if (mode === "error") {
+      if (index < currentStep) cls += " done";
+      else if (index === currentStep) cls += " error";
+    }
+    return `<div class="${cls}"><span class="mini-step-num">${index + 1}</span><span>${escapeHtml(label)}</span></div>`;
+  }).join("");
+
+  miniStepsEl.innerHTML = `
+    <div class="mini-step-track">${steps}</div>
+    <p class="mini-step-note">${escapeHtml(note)}</p>
+  `;
 }
 
 function prettyLabel(value) {
@@ -102,9 +113,33 @@ function renderTaskOutcome(task) {
 }
 
 function renderReplyOutcome(reply, manualChunks) {
+  const groundedIds = Array.isArray(reply.grounding_chunk_ids) ? reply.grounding_chunk_ids : [];
+  const availableChunks = Array.isArray(manualChunks) ? manualChunks : [];
+  const shownChunks = groundedIds.length
+    ? availableChunks.filter((chunk) => groundedIds.includes(chunk.id))
+    : availableChunks;
   const chunkBadges = Array.isArray(reply.grounding_chunk_ids) && reply.grounding_chunk_ids.length
     ? reply.grounding_chunk_ids.map((id) => `<span class="chunk-chip">${escapeHtml(id)}</span>`).join("")
     : "<span class=\"chunk-chip\">No chunk ids</span>";
+  const chunkContext = shownChunks.length
+    ? `
+      <div class="chunk-context-list">
+        ${shownChunks
+          .map(
+            (chunk) => `
+          <article class="chunk-context-card">
+            <p class="chunk-context-head">
+              <strong>${escapeHtml(chunk.id || "UNKNOWN")}</strong>
+              ${chunk.title ? `<span>${escapeHtml(chunk.title)}</span>` : ""}
+            </p>
+            <p class="chunk-context-text">${escapeHtml(chunk.text || "No chunk text available.")}</p>
+          </article>
+        `
+          )
+          .join("")}
+      </div>
+    `
+    : "<p class=\"block-body\">No manual chunk context available.</p>";
   return `
     <div class="template-card reply-template">
       <div class="template-top">
@@ -115,6 +150,10 @@ function renderReplyOutcome(reply, manualChunks) {
       <div class="template-section">
         <p class="block-title">Grounded By</p>
         <div class="chunk-chip-wrap">${chunkBadges}</div>
+      </div>
+      <div class="template-section">
+        <p class="block-title">Chunk Context</p>
+        ${chunkContext}
       </div>
     </div>
   `;
@@ -176,21 +215,17 @@ function renderError(message) {
 async function runPipeline() {
   const requestType = requestTypeEl.value;
   if (!requestType) {
-    addLog("Please choose a request type to continue.", "error");
+    renderMiniSteps(0, "error", "Choose a request type first.");
     return;
   }
 
-  clearLogs();
   outputEl.classList.add("empty");
   outputEl.textContent = "Running...";
-
-  addLog(`Selected type: ${prettyLabel(requestType)}.`);
-  const selected = messageForType(requestType);
-  addLog(`Loaded sample message ${selected?.id || "unknown"}.`);
+  renderMiniSteps(0, "running", "Resolving selected message.");
 
   runBtnEl.disabled = true;
   try {
-    addLog("Processing your request...");
+    renderMiniSteps(1, "running", "Extracting request details.");
     const response = await fetch("/extract", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -198,41 +233,18 @@ async function runPipeline() {
     });
 
     const data = await response.json();
-
-    if (Array.isArray(data.pipeline_logs)) {
-      const stepMap = {
-        request_received: "Request received.",
-        input_resolved: "Input confirmed.",
-        classification_prompt_ready: "Extraction prompt prepared.",
-        classification_llm_start: "Model is classifying and extracting.",
-        classification_llm_done: "Structured extraction received.",
-        classification_json_parse_done: "Extraction JSON parsed.",
-        classification_schema_check_done: "Extraction schema validated.",
-        outcome_route_selected: "Outcome route selected.",
-        question_manual_retrieval_done: "Loaded relevant chunks from manual.json.",
-        question_reply_prompt_ready: "Reply prompt prepared from manual chunks.",
-        question_reply_llm_start: "Model is drafting grounded reply.",
-        question_reply_llm_done: "Grounded reply draft received.",
-        question_reply_json_parse_done: "Reply JSON parsed.",
-        pipeline_complete: "Pipeline complete.",
-        pipeline_failed: "Pipeline could not complete."
-      };
-      data.pipeline_logs.forEach((entry) => {
-        const nice = stepMap[entry.step] || "Step completed.";
-        addLog(nice);
-      });
-    }
+    renderMiniSteps(2, "running", "Building routed outcome.");
 
     if (!response.ok) {
-      addLog("Could not finish this run. Please try again.", "error");
+      renderMiniSteps(2, "error", data.error || "Could not finish this run.");
       renderError(data.error || "Could not finish this run.");
       return;
     }
 
-    addLog("Your routed outcome is ready.", "ok");
     renderOutput(data);
+    renderMiniSteps(2, "done", "Outcome ready.");
   } catch (error) {
-    addLog("Something interrupted the request. Please try again.", "error");
+    renderMiniSteps(1, "error", "Something interrupted the request. Please try again.");
     renderError("Something interrupted the request. Please try again.");
   } finally {
     runBtnEl.disabled = false;
@@ -240,8 +252,7 @@ async function runPipeline() {
 }
 
 async function init() {
-  clearLogs();
-  addLog("Loading demo data...");
+  renderMiniSteps(0, "idle", "Loading demo data.");
 
   try {
     const [schemaRes, messagesRes] = await Promise.all([
@@ -268,7 +279,7 @@ async function init() {
       .join("");
 
     if (!state.requestTypes.length) {
-      addLog("No request types are available right now.", "error");
+      renderMiniSteps(0, "error", "No request types are available right now.");
       requestTypeEl.innerHTML = "<option value=''>No types found</option>";
       runBtnEl.disabled = true;
       return;
@@ -277,9 +288,9 @@ async function init() {
     const initialType = state.requestTypes[0];
     requestTypeEl.value = initialType;
     renderMessagePreview(initialType);
-    addLog("Ready.");
+    renderMiniSteps(0, "idle", "Run the routing pipeline to generate an outcome.");
   } catch (error) {
-    addLog("Could not load the demo data.", "error");
+    renderMiniSteps(0, "error", "Could not load the demo data.");
     runBtnEl.disabled = true;
   }
 }
@@ -287,7 +298,7 @@ async function init() {
 requestTypeEl.addEventListener("change", (event) => {
   const requestType = event.target.value;
   renderMessagePreview(requestType);
-  addLog(`Switched to ${prettyLabel(requestType)}.`);
+  renderMiniSteps(0, "idle", `Selected ${prettyLabel(requestType)}. Run pipeline.`);
 });
 
 runBtnEl.addEventListener("click", runPipeline);
