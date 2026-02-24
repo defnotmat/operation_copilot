@@ -1,4 +1,5 @@
 const requestTypeEl = document.getElementById("requestType");
+const sampleMessageEl = document.getElementById("sampleMessage");
 const runBtnEl = document.getElementById("runBtn");
 const messageCardEl = document.getElementById("messageCard");
 const miniStepsEl = document.getElementById("miniSteps");
@@ -46,23 +47,55 @@ function escapeHtml(value) {
     .replaceAll("'", "&#39;");
 }
 
-function messageForType(requestType) {
-  return state.messages.find((msg) => msg.request_type === requestType) || null;
+function messagesForType(requestType) {
+  return state.messages.filter((msg) => msg.request_type === requestType);
 }
 
-function renderMessagePreview(requestType) {
-  const message = messageForType(requestType);
+function messageForSelection(requestType, messageId) {
+  const candidates = messagesForType(requestType);
+  if (!candidates.length) return null;
+  if (messageId) {
+    const exact = candidates.find((msg) => msg.id === messageId);
+    if (exact) return exact;
+  }
+  return candidates[0];
+}
+
+function sampleMessageLabel(message) {
+  const custom = message.ui_label || message.label || "";
+  if (custom) return `${custom} (${message.id || "no-id"})`;
+  return message.id || "no-id";
+}
+
+function renderSampleOptions(requestType) {
+  const candidates = messagesForType(requestType);
+  if (!candidates.length) {
+    sampleMessageEl.innerHTML = "<option value=''>No samples</option>";
+    sampleMessageEl.disabled = true;
+    return;
+  }
+
+  sampleMessageEl.disabled = false;
+  sampleMessageEl.innerHTML = candidates
+    .map((msg) => `<option value="${escapeHtml(msg.id || "")}">${escapeHtml(sampleMessageLabel(msg))}</option>`)
+    .join("");
+}
+
+function renderMessagePreview(requestType, messageId) {
+  const message = messageForSelection(requestType, messageId);
   if (!message) {
     messageCardEl.classList.add("empty");
     messageCardEl.textContent = "No sample message found for this type.";
     return;
   }
 
+  const uiLabel = message.ui_label || message.label || "";
   messageCardEl.classList.remove("empty");
   messageCardEl.innerHTML = `
     <div class="message-meta">
       <strong>${escapeHtml(message.id || "no-id")}</strong> · ${escapeHtml(message.source || "unknown source")} · ${escapeHtml(message.sender || "unknown sender")}
     </div>
+    ${uiLabel ? `<p class="message-label">${escapeHtml(uiLabel)}</p>` : ""}
     <p class="message-text">${escapeHtml(message.message || "no message text")}</p>
   `;
 }
@@ -113,6 +146,18 @@ function renderTaskOutcome(task) {
 }
 
 function renderReplyOutcome(reply, manualChunks) {
+  if (reply.no_information_found) {
+    return `
+      <div class="template-card reply-template">
+        <div class="template-top">
+          <span class="template-kicker">Customer Reply Draft</span>
+          <span class="template-id">${escapeHtml(reply.message_id || "Q-UNKNOWN")}</span>
+        </div>
+        <p class="reply-text">${escapeHtml(reply.reply_draft || "Information you are looking for is not found in the manual.")}</p>
+      </div>
+    `;
+  }
+
   const groundedIds = Array.isArray(reply.grounding_chunk_ids) ? reply.grounding_chunk_ids : [];
   const availableChunks = Array.isArray(manualChunks) ? manualChunks : [];
   const shownChunks = groundedIds.length
@@ -166,6 +211,7 @@ function renderOutput(data) {
   const outcome = data.outcome || {};
   const manualChunks = Array.isArray(data.question_manual_chunks) ? data.question_manual_chunks : [];
   const missing = Array.isArray(extraction.missing_info_questions) ? extraction.missing_info_questions : [];
+  const noInfoReply = outcomeType === "reply_draft" && Boolean(outcome.no_information_found);
 
   let outcomeHtml = `<p class="block-body">No outcome generated.</p>`;
   if (outcomeType === "ticket_entry") {
@@ -189,6 +235,10 @@ function renderOutput(data) {
       ${outcomeHtml}
     </div>
 
+    ${
+      noInfoReply
+        ? ""
+        : `
     <div class="block">
       <p class="block-title">Extraction Summary</p>
       <p class="block-body"><strong>Summary:</strong> ${escapeHtml(extraction.summary || "no information found")}</p>
@@ -199,6 +249,8 @@ function renderOutput(data) {
       <p class="block-title">Missing Information Questions</p>
       ${renderList(missing, "No missing information questions.")}
     </div>
+    `
+    }
 
     <div class="block">
       <div class="raw-json-head">
@@ -217,6 +269,7 @@ function renderError(message) {
 
 async function runPipeline() {
   const requestType = requestTypeEl.value;
+  const messageId = sampleMessageEl.value;
   if (!requestType) {
     renderMiniSteps(0, "error", "Choose a request type first.");
     return;
@@ -232,7 +285,7 @@ async function runPipeline() {
     const response = await fetch("/extract", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ request_type: requestType })
+      body: JSON.stringify({ request_type: requestType, id: messageId })
     });
 
     const data = await response.json();
@@ -290,7 +343,8 @@ async function init() {
 
     const initialType = state.requestTypes[0];
     requestTypeEl.value = initialType;
-    renderMessagePreview(initialType);
+    renderSampleOptions(initialType);
+    renderMessagePreview(initialType, sampleMessageEl.value);
     renderMiniSteps(0, "idle", "Run the routing pipeline to generate an outcome.");
   } catch (error) {
     renderMiniSteps(0, "error", "Could not load the demo data.");
@@ -300,10 +354,19 @@ async function init() {
 
 requestTypeEl.addEventListener("change", (event) => {
   const requestType = event.target.value;
-  renderMessagePreview(requestType);
+  renderSampleOptions(requestType);
+  renderMessagePreview(requestType, sampleMessageEl.value);
   outputEl.classList.add("empty");
   outputEl.textContent = "No output yet.";
   renderMiniSteps(0, "idle", `Selected ${prettyLabel(requestType)}. Run pipeline.`);
+});
+
+sampleMessageEl.addEventListener("change", () => {
+  const requestType = requestTypeEl.value;
+  renderMessagePreview(requestType, sampleMessageEl.value);
+  outputEl.classList.add("empty");
+  outputEl.textContent = "No output yet.";
+  renderMiniSteps(0, "idle", `Selected sample ${sampleMessageLabel(messageForSelection(requestType, sampleMessageEl.value) || {})}.`);
 });
 
 outputEl.addEventListener("click", (event) => {

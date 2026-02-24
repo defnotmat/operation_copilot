@@ -161,6 +161,8 @@ QUESTION_REPLY_SYSTEM_PROMPT = (
     "Use only the provided manual chunks as factual source.\n"
     "Do not invent plan details, pricing, or roadmap commitments.\n"
     "If the manual does not fully answer, state uncertainty briefly and ask a concise follow-up.\n"
+    "IMPORTANT: If the question is not related to the manual at all, or the information is not there, then return No information found.\n"
+    "Leave all other keys in the schema like Summary, Priority Rationale empty.\n"
     "Return JSON only."
 )
 
@@ -286,10 +288,28 @@ def generate_question_reply_with_manual(
         raise ConfigError("manual.json is missing or empty; cannot generate grounded reply for question route.")
 
     customer_text = str(selected_message.get("message", ""))
-    retrieved_chunks = retrieve_top_manual_chunks(customer_text, MANUAL_JSON_CHUNKS, top_k=3)
+    retrieved_chunks = retrieve_top_manual_chunks(
+        customer_text,
+        MANUAL_JSON_CHUNKS,
+        top_k=3,
+        require_overlap=True,
+    )
     if log_step:
         ids = ", ".join([chunk.get("id", "UNKNOWN") for chunk in retrieved_chunks]) or "none"
         log_step("question_manual_retrieval_done", f"Retrieved manual.json chunks: {ids}")
+
+    if not retrieved_chunks:
+        if log_step:
+            log_step("question_manual_not_found", "No relevant manual context found for this question.")
+        return {
+            "to": selected_message.get("sender", "unknown"),
+            "channel": selected_message.get("source", "unknown"),
+            "message_id": selected_message.get("id", "unknown"),
+            "reply_draft": "Information you are looking for is not found in the manual.",
+            "grounding_chunk_ids": [],
+            "used_manual_chunks": [],
+            "no_information_found": True,
+        }
 
     prompt = build_question_reply_prompt(selected_message, extraction, retrieved_chunks)
     model = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
@@ -330,6 +350,17 @@ def generate_question_reply_with_manual(
         "reply_draft": reply_draft,
         "grounding_chunk_ids": [str(item) for item in chunk_ids],
         "used_manual_chunks": retrieved_chunks,
+        "no_information_found": False,
+    }
+
+
+def build_empty_extraction_for_unknown_question() -> Dict[str, Any]:
+    return {
+        "request_type": "question",
+        "priority": {"level": "", "rationale": ""},
+        "summary": "",
+        "suggested_next_action": "",
+        "missing_info_questions": [],
     }
 
 
@@ -417,6 +448,12 @@ def extract() -> Any:
         llm_result = extract_with_llm(selected_message, log_step=add_log)
         extracted = llm_result["extraction"]
         outcome_data = build_outcome(selected_message, extracted, log_step=add_log)
+        if (
+            outcome_data.get("outcome_type") == "reply_draft"
+            and isinstance(outcome_data.get("outcome"), dict)
+            and outcome_data["outcome"].get("no_information_found")
+        ):
+            extracted = build_empty_extraction_for_unknown_question()
         add_log("pipeline_complete", "Request processed with route-specific outcome.")
 
         return jsonify(

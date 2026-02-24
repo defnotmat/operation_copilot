@@ -1,21 +1,32 @@
-
 {
   "bug_report": {
-      "id": "B_001",
-      "source": "Email",
-      "sender": "finance@acme.com",
-      "message": "Hi—since yesterday our exports fail with Error 502 when file > 200MB. We’re on Pro plan. This blocks our month-end close. Can you help?"
+    "id": "B_001",
+    "ui_label": "Export Failure Bug",
+    "source": "Email",
+    "sender": "finance@acme.com",
+    "message": "Hi—since yesterday our exports fail with Error 502 when file > 200MB. We’re on Pro plan. This blocks our month-end close. Can you help?"
   },
   "feature_request": {
-      "id": "F_001",
-      "source": "Slack",
-      "sender": "ops@startup.io",
-      "message": "It would be great if exports could be scheduled automatically every week instead of manual runs."
+    "id": "F_001",
+    "ui_label": "Scheduled Exports Request",
+    "source": "Slack",
+    "sender": "ops@startup.io",
+    "message": "It would be great if exports could be scheduled automatically every week instead of manual runs."
   },
-  "question": {
+  "question": [
+    {
       "id": "Q_001",
+      "ui_label": "Plan and Trial Question",
+      "source": "Chat",
+      "sender": "user123@example.com",
+      "message": "What’s included in the Pro plan and is there a free trial?"
+    },
+    {
+      "id": "Q_002",
+      "ui_label": "Irrelevant Question",
       "source": "Chat",
       "sender": "user123@example.com",
       "message": "What’s the capital city of Italy?"
-  }
+    }
+  ]
 }

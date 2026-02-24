@@ -5,6 +5,8 @@ from pathlib import Path
 from typing import Any, Dict, List
 
 STOPWORDS = {
+    "the",
+    "and",
     "for",
     "with",
     "that",
@@ -91,13 +93,18 @@ def load_manual_json_chunks(manual_json_path: Path) -> List[Dict[str, str]]:
     return normalize_manual_chunks(load_json(manual_json_path))
 
 
-def retrieve_top_manual_chunks(query: str, chunks: List[Dict[str, str]], top_k: int = 3) -> List[Dict[str, str]]:
+def retrieve_top_manual_chunks(
+    query: str,
+    chunks: List[Dict[str, str]],
+    top_k: int = 3,
+    require_overlap: bool = False,
+) -> List[Dict[str, str]]:
     if not chunks:
         return []
 
     query_tokens = tokenize(query)
     if not query_tokens:
-        return chunks[:top_k]
+        return [] if require_overlap else chunks[:top_k]
 
     query_counter = Counter(query_tokens)
     scored: List[Any] = []
@@ -117,7 +124,7 @@ def retrieve_top_manual_chunks(query: str, chunks: List[Dict[str, str]], top_k: 
         scored.append((score, idx, chunk))
 
     if not scored:
-        return chunks[:top_k]
+        return [] if require_overlap else chunks[:top_k]
 
     scored.sort(key=lambda x: (-x[0], x[1]))
     return [entry[2] for entry in scored[:top_k]]
