@@ -2,19 +2,19 @@
 {
   "bug_report": {
       "id": "bug_001",
-      "source": "email",
+      "source": "Email",
       "sender": "finance@acme.com",
       "message": "Hi—since yesterday our exports fail with Error 502 when file > 200MB. We’re on Pro plan. This blocks our month-end close. Can you help?"
   },
   "feature_request": {
       "id": "feat_001",
-      "source": "slack",
+      "source": "Slack",
       "sender": "ops@startup.io",
       "message": "It would be great if exports could be scheduled automatically every week instead of manual runs."
   },
   "question": {
       "id": "q_001",
-      "source": "chat",
+      "source": "Chat",
       "sender": "user123@example.com",
       "message": "What’s included in the Pro plan and is there a free trial?"
   }

@@ -72,22 +72,10 @@ function renderTicketOutcome(ticket) {
       </div>
       <h3>${escapeHtml(ticket.title || "No summary")}</h3>
       <div class="kv-grid">
-        <div><span>Status</span><strong>${escapeHtml(ticket.status || "-")}</strong></div>
-        <div><span>Queue</span><strong>${escapeHtml(ticket.queue || "-")}</strong></div>
-        <div><span>Priority</span><strong>${escapeHtml(ticket.priority || "-")}</strong></div>
-        <div><span>Reporter</span><strong>${escapeHtml(ticket.reporter || "-")}</strong></div>
-      </div>
-      <div class="template-section">
-        <p class="block-title">Triage Rationale</p>
-        <p class="block-body">${escapeHtml(ticket.triage_rationale || "no information found")}</p>
-      </div>
-      <div class="template-section">
-        <p class="block-title">Next Internal Action</p>
-        <p class="block-body">${escapeHtml(ticket.next_internal_action || "no information found")}</p>
-      </div>
-      <div class="template-section">
-        <p class="block-title">Missing Info Checklist</p>
-        ${renderList(ticket.missing_info_checklist, "No follow-up items.")}
+        <div><span>Status</span><strong class="kv-value">${escapeHtml(ticket.status || "-")}</strong></div>
+        <div><span>Queue</span><strong class="kv-value">${escapeHtml(ticket.queue || "-")}</strong></div>
+        <div><span>Priority</span><strong class="kv-value">${escapeHtml(ticket.priority || "-")}</strong></div>
+        <div><span>Reporter</span><strong class="kv-value">${escapeHtml(ticket.reporter || "-")}</strong></div>
       </div>
     </div>
   `;
@@ -109,18 +97,6 @@ function renderTaskOutcome(task) {
         <tr><th>Requester</th><td>${escapeHtml(task.requester || "-")}</td></tr>
         <tr><th>Source</th><td>${escapeHtml(task.source || "-")}</td></tr>
       </table>
-      <div class="template-section">
-        <p class="block-title">Problem Statement</p>
-        <p class="block-body">${escapeHtml(task.problem_statement || "no information found")}</p>
-      </div>
-      <div class="template-section">
-        <p class="block-title">Proposed Next Step</p>
-        <p class="block-body">${escapeHtml(task.proposed_next_step || "no information found")}</p>
-      </div>
-      <div class="template-section">
-        <p class="block-title">Discovery Questions</p>
-        ${renderList(task.discovery_questions, "No discovery questions.")}
-      </div>
     </div>
   `;
 }

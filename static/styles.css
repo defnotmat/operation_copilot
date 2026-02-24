@@ -327,6 +327,7 @@ h3 {
   border-radius: 8px;
   padding: 7px 8px;
   background: rgba(12, 17, 40, 0.7);
+  min-width: 0;
 }
 
 .kv-grid span {
@@ -341,6 +342,12 @@ h3 {
 .kv-grid strong {
   font-size: 0.87rem;
   color: #eef3ff;
+}
+
+.kv-value {
+  display: block;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .task-table {
