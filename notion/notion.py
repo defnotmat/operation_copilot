@@ -60,14 +60,12 @@ def send_feature_request_to_notion(
             "Title": _notion_title(str(task_sheet.get("title", "Bug report"))),
             "Ticket ID": _notion_rich_text(ticket_id),
             "Status": {"select": {"name": str(task_sheet.get("status", "New"))}},
-            "Queue": _notion_rich_text(str(task_sheet.get("queue", "Support Engineering"))),
             "Priority": {"select": {"name": priority_level}},
             "Priority Rationale": _notion_rich_text(triage_rationale),
             "Reporter": _notion_rich_text(str(task_sheet.get("reporter", selected_message.get("sender", "")))),
             "Source": _notion_rich_text(str(selected_message.get("source", ""))),
-            "Original Message ID": _notion_rich_text(str(task_sheet.get("original_message_id", selected_message.get("id", "")))),
             "Customer Message": _notion_rich_text(str(task_sheet.get("customer_message", selected_message.get("message", "")))),
-            "Next Internal Action": _notion_rich_text(next_internal_action),
+            "Next Action": _notion_rich_text(next_internal_action),
             "Missing Info Checklist": _notion_rich_text_lines(missing_info),
         },
     }
@@ -92,6 +90,8 @@ def send_feature_request_to_notion(
             timeout=15,  # prevent hanging
         )
 
+        print("🔵 NOTION STATUS:", response.status_code)
+        print("🔵 NOTION RESPONSE:", response.text)
         # Raise HTTPError for 4xx/5xx
         response.raise_for_status()
 

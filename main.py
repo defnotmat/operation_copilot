@@ -658,6 +658,7 @@ def extract() -> Any:
 
         notion_sync: Optional[Dict[str, Any]] = None
         resolved_request_type = normalize_request_type(outcome_data.get("request_type"))
+
         if resolved_request_type == "bug_report" and outcome_data.get("outcome_type") == "ticket_entry":
             notion_payload = dict(outcome_data.get("outcome", {}))
             notion_payload.setdefault("task_id", notion_payload.get("ticket_id", ""))
