@@ -1,4 +1,3 @@
-import json
 import os
 from typing import Any, Dict, Optional
 import requests
@@ -43,24 +42,33 @@ def send_feature_request_to_notion(
 
     if not token or not database_id:
         if log_step:
-            log_step("notion_sync_skipped", "NOTION_TOKEN or NOTION_DATA_SOURCE_ID missing.")
+            log_step("notion_sync_skipped", "NOTION_TOKEN or NOTION_DATABASE_ID missing.")
         return {"sent": False, "status": "missing_config"}
 
     priority_obj = extraction.get("priority")
     priority = priority_obj if isinstance(priority_obj, dict) else {}
-    priority_level = str(priority.get("level", "P3")).strip() or "P3"
+    priority_level = str(task_sheet.get("priority", priority.get("level", "P2"))).strip() or "P2"
+
+    ticket_id = str(task_sheet.get("ticket_id", task_sheet.get("task_id", "")))
+    triage_rationale = str(task_sheet.get("triage_rationale", priority.get("rationale", "")))
+    next_internal_action = str(task_sheet.get("next_internal_action", extraction.get("suggested_next_action", "")))
+    missing_info = task_sheet.get("missing_info_checklist", extraction.get("missing_info_questions", []))
 
     payload: Dict[str, Any] = {
         "parent": {"database_id": database_id},
         "properties": {
-            "Title": _notion_title(str(task_sheet.get("title", "Feature request"))),
-            "Request ID": _notion_rich_text(str(task_sheet.get("task_id", ""))),
+            "Title": _notion_title(str(task_sheet.get("title", "Bug report"))),
+            "Ticket ID": _notion_rich_text(ticket_id),
+            "Status": {"select": {"name": str(task_sheet.get("status", "New"))}},
+            "Queue": _notion_rich_text(str(task_sheet.get("queue", "Support Engineering"))),
             "Priority": {"select": {"name": priority_level}},
-            "Priority Rationale": _notion_rich_text(str(priority.get("rationale", ""))),
-            "Sender": _notion_rich_text(str(selected_message.get("sender", ""))),
+            "Priority Rationale": _notion_rich_text(triage_rationale),
+            "Reporter": _notion_rich_text(str(task_sheet.get("reporter", selected_message.get("sender", "")))),
             "Source": _notion_rich_text(str(selected_message.get("source", ""))),
-            "Suggested Steps": _notion_rich_text(str(extraction.get("suggested_next_action", ""))),
-            "Questions": _notion_rich_text_lines(extraction.get("missing_info_questions", [])),
+            "Original Message ID": _notion_rich_text(str(task_sheet.get("original_message_id", selected_message.get("id", "")))),
+            "Customer Message": _notion_rich_text(str(task_sheet.get("customer_message", selected_message.get("message", "")))),
+            "Next Internal Action": _notion_rich_text(next_internal_action),
+            "Missing Info Checklist": _notion_rich_text_lines(missing_info),
         },
     }
 
@@ -74,7 +82,7 @@ def send_feature_request_to_notion(
 
 
     if log_step:
-        log_step("notion_sync_start", "Sending feature task to Notion.")
+        log_step("notion_sync_start", "Sending bug report entry to Notion.")
 
     try:
         response = requests.post(
@@ -83,9 +91,6 @@ def send_feature_request_to_notion(
             headers=headers,
             timeout=15,  # prevent hanging
         )
-
-        print("🔵 NOTION STATUS:", response.status_code)
-        print("🔵 NOTION RESPONSE:", response.text)
 
         # Raise HTTPError for 4xx/5xx
         response.raise_for_status()
@@ -96,7 +101,7 @@ def send_feature_request_to_notion(
             data = {}
 
         if log_step:
-            log_step("notion_sync_done", "Feature task synced to Notion.")
+            log_step("notion_sync_done", "Bug report entry synced to Notion.")
 
         return {
             "sent": True,
@@ -144,5 +149,4 @@ def send_feature_request_to_notion(
         if log_step:
             log_step("notion_sync_failed", f"Unexpected error: {e}")
         return {"sent": False, "status": "error", "detail": str(e)}
-
 

@@ -658,11 +658,13 @@ def extract() -> Any:
 
         notion_sync: Optional[Dict[str, Any]] = None
         resolved_request_type = normalize_request_type(outcome_data.get("request_type"))
-        if resolved_request_type == "feature_request" and outcome_data.get("outcome_type") == "task_sheet":
+        if resolved_request_type == "bug_report" and outcome_data.get("outcome_type") == "ticket_entry":
+            notion_payload = dict(outcome_data.get("outcome", {}))
+            notion_payload.setdefault("task_id", notion_payload.get("ticket_id", ""))
             notion_sync = send_feature_request_to_notion(
                 selected_message=selected_message,
                 extraction=extracted,
-                task_sheet=outcome_data.get("outcome", {}),
+                task_sheet=notion_payload,
                 log_step=add_log,
             )
 
