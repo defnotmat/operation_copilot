@@ -1,31 +1,27 @@
 import json
 import os
-from typing import Any, Dict, List, Optional
-from urllib import error as urlerror
-from urllib import request as urlrequest
+from typing import Any, Dict, Optional
+import requests
 
 
-def parse_bool_env(name: str, default: bool = False) -> bool:
-    raw = os.getenv(name)
-    if raw is None:
-        return default
-    return raw.strip().lower() in {"1", "true", "yes", "on"}
+def _notion_title(text: str) -> Dict[str, Any]:
+    # Notion "title" property expects a list of rich-text objects
+    return {"title": [{"type": "text", "text": {"content": text}}]}
 
 
-def _notion_rich_text(text: Any) -> List[Dict[str, Any]]:
-    value = str(text or "")
-    if len(value) > 1900:
-        value = f"{value[:1897]}..."
-    return [{"type": "text", "text": {"content": value}}]
+def _notion_rich_text(text: str) -> Dict[str, Any]:
+    # Notion "rich_text" property expects a list of rich-text objects
+    return {"rich_text": [{"type": "text", "text": {"content": text}}]}
 
 
-def _notion_lines(value: Any) -> str:
+def _notion_rich_text_lines(value: Any) -> Dict[str, Any]:
+    # Accept list[str] or anything; convert to a single rich_text field with newlines
+    if value is None:
+        return _notion_rich_text("")
     if isinstance(value, list):
-        items = [str(item).strip() for item in value if str(item).strip()]
-        if not items:
-            return ""
-        return "\n".join([f"- {item}" for item in items])
-    return str(value or "")
+        joined = "\n".join(str(x) for x in value if x is not None)
+        return _notion_rich_text(joined)
+    return _notion_rich_text(str(value))
 
 
 def send_feature_request_to_notion(
@@ -34,71 +30,108 @@ def send_feature_request_to_notion(
     task_sheet: Dict[str, Any],
     log_step: Optional[Any] = None,
 ) -> Dict[str, Any]:
-    if not parse_bool_env("NOTION_DEMO_ENABLED", default=False):
-        if log_step:
-            log_step("notion_sync_skipped", "Notion sync disabled via NOTION_DEMO_ENABLED.")
-        return {"sent": False, "status": "disabled"}
 
     token = os.getenv("NOTION_TOKEN", "").strip()
     notion_version = os.getenv("NOTION_VERSION", "2025-09-03").strip()
-    parent_id = os.getenv("NOTION_DATA_SOURCE_ID", "").strip() or os.getenv("NOTION_DATABASE_ID", "").strip()
-    parent_type = "data_source_id" if os.getenv("NOTION_DATA_SOURCE_ID", "").strip() else "database_id"
+    data_source_id = os.getenv("NOTION_DATA_SOURCE_ID", "").strip()
 
-    if not token or not parent_id:
+    if not token or not data_source_id:
         if log_step:
-            log_step("notion_sync_skipped", "Notion token or parent id missing.")
+            log_step("notion_sync_skipped", "NOTION_TOKEN or NOTION_DATA_SOURCE_ID missing.")
         return {"sent": False, "status": "missing_config"}
 
-    priority = extraction.get("priority") if isinstance(extraction.get("priority"), dict) else {}
+    priority_obj = extraction.get("priority")
+    priority = priority_obj if isinstance(priority_obj, dict) else {}
+    priority_level = str(priority.get("level", "P3")).strip() or "P3"
+
     payload: Dict[str, Any] = {
-        "parent": {"type": parent_type, parent_type: parent_id},
+        "parent": {"type": "data_source_id", "data_source_id": data_source_id},
         "properties": {
-            "Title": {"title": _notion_rich_text(task_sheet.get("title", "Feature request"))},
-            "Request ID": {"rich_text": _notion_rich_text(task_sheet.get("task_id", ""))},
-            "Priority": {"select": {"name": str(priority.get("level", "P3"))}},
-            "Priority Rationale": {"rich_text": _notion_rich_text(priority.get("rationale", ""))},
-            "Sender": {"rich_text": _notion_rich_text(selected_message.get("sender", ""))},
-            "Source": {"rich_text": _notion_rich_text(selected_message.get("source", ""))},
-            "Suggested Steps": {"rich_text": _notion_rich_text(extraction.get("suggested_next_action", ""))},
-            "Questions": {"rich_text": _notion_rich_text(_notion_lines(extraction.get("missing_info_questions", [])))},
+            "Title": _notion_title(str(task_sheet.get("title", "Feature request"))),
+            "Request ID": _notion_rich_text(str(task_sheet.get("task_id", ""))),
+            "Priority": {"multi_select": [{"name": priority_level}]},
+            "Priority Rationale": _notion_rich_text(str(priority.get("rationale", ""))),
+            "Sender": _notion_rich_text(str(selected_message.get("sender", ""))),
+            "Source": _notion_rich_text(str(selected_message.get("source", ""))),
+            "Suggested Steps": _notion_rich_text(str(extraction.get("suggested_next_action", ""))),
+            "Questions": _notion_rich_text_lines(extraction.get("missing_info_questions", [])),
         },
     }
-    body = json.dumps(payload).encode("utf-8")
-    req = urlrequest.Request(
-        url="https://api.notion.com/v1/pages",
-        data=body,
-        headers={
-            "Authorization": f"Bearer {token}",
-            "Notion-Version": notion_version,
-            "Content-Type": "application/json",
-        },
-        method="POST",
-    )
+
+    url = "https://api.notion.com/v1/pages"
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Notion-Version": notion_version,
+        "Content-Type": "application/json",
+    }
 
     if log_step:
-        log_step("notion_sync_start", f"Sending feature task to Notion ({parent_type}).")
+        log_step("notion_sync_start", "Sending feature task to Notion.")
+
     try:
-        with urlrequest.urlopen(req, timeout=10) as resp:
-            raw = resp.read().decode("utf-8")
-            data = json.loads(raw) if raw else {}
+        response = requests.post(
+            url,
+            json=payload,
+            headers=headers,
+            timeout=15,  # prevent hanging
+        )
+
+        # Raise HTTPError for 4xx/5xx
+        response.raise_for_status()
+
+        try:
+            data = response.json()
+        except ValueError:
+            data = {}
+
         if log_step:
             log_step("notion_sync_done", "Feature task synced to Notion.")
+
         return {
             "sent": True,
             "status": "ok",
             "notion_page_id": data.get("id", ""),
             "notion_url": data.get("url", ""),
         }
-    except urlerror.HTTPError as e:
+
+    # --- HTTP errors (4xx / 5xx from Notion) ---
+    except requests.exceptions.HTTPError as http_err:
         detail = ""
         try:
-            detail = e.read().decode("utf-8")
+            detail = response.text
         except Exception:
-            detail = str(e)
+            detail = str(http_err)
+
         if log_step:
-            log_step("notion_sync_failed", f"Notion HTTP error: {e.code}")
-        return {"sent": False, "status": "http_error", "code": e.code, "detail": detail}
-    except Exception as e:  # pragma: no cover
+            log_step("notion_sync_failed", f"HTTP error {response.status_code}")
+
+        return {
+            "sent": False,
+            "status": "http_error",
+            "code": response.status_code,
+            "detail": detail,
+        }
+
+    # --- Network errors (DNS, connection, timeout) ---
+    except requests.exceptions.Timeout:
         if log_step:
-            log_step("notion_sync_failed", f"Notion sync error: {e}")
+            log_step("notion_sync_failed", "Request timed out.")
+        return {"sent": False, "status": "timeout"}
+
+    except requests.exceptions.ConnectionError:
+        if log_step:
+            log_step("notion_sync_failed", "Connection error.")
+        return {"sent": False, "status": "connection_error"}
+
+    except requests.exceptions.RequestException as e:
+        if log_step:
+            log_step("notion_sync_failed", f"Request exception: {e}")
+        return {"sent": False, "status": "request_error", "detail": str(e)}
+
+    # --- Any unexpected Python error ---
+    except Exception as e:
+        if log_step:
+            log_step("notion_sync_failed", f"Unexpected error: {e}")
         return {"sent": False, "status": "error", "detail": str(e)}
+
+
