@@ -197,11 +197,13 @@ FEATURE_FOLLOWUP_ACTION = str(
 BUG_NEXT_ACTION_SYSTEM_PROMPT = str(
     PROMPTS.get("bug_next_action_system_prompt")
     or (
-        "You generate `suggested_next_action` for support bug reports.\n"
-        "Use only the provided manual chunks.\n"
-        "Do not invent details.\n"
+        "You write `suggested_next_action` for support bug reports.\n"
+        "Use only the provided manual chunks as source of truth.\n"
+        "Prioritize client troubleshooting steps from the chunks.\n"
+        "Do not mention ticket creation, queues, triage, escalation, or internal workflow.\n"
+        "Do not ask for workspace/account/client IDs, screenshots, error IDs, or logs in this field.\n"
         "Return plain text only (no JSON).\n"
-        "If chunks do not provide a relevant next step, return exactly: no suggested action"
+        "If chunks do not contain a concrete action, return exactly: no suggested action"
     )
 ).strip()
 
@@ -291,12 +293,14 @@ def build_bug_next_action_from_manual(
     client = get_openai_client()
     prompt = (
         "Customer bug message:\n"
-        f"{json.dumps(selected_message, ensure_ascii=True)}\n\n"
-        "Structured extraction:\n"
-        f"{json.dumps(extraction, ensure_ascii=True)}\n\n"
+        f"{str(selected_message.get('message', '')).strip()}\n\n"
         "Relevant manual chunks:\n"
         f"{format_manual_context(retrieved_chunks)}\n\n"
-        "Write one concise suggested_next_action for the support team, grounded in the chunks."
+        "Write one concise suggested_next_action for the support team.\n"
+        "Focus on concrete troubleshooting actions from the chunks.\n"
+        "Do not include ticket/escalation wording.\n"
+        "Do not ask for IDs, screenshots, error IDs, or logs.\n"
+        "If no concrete action exists in the chunks, return exactly: no suggested action"
     )
     if log_step:
         log_step("bug_next_action_llm_start", f"Calling model: {model}")
@@ -313,9 +317,68 @@ def build_bug_next_action_from_manual(
         log_step("bug_next_action_llm_done", "Generated bug suggested_next_action from manual chunks.")
 
     text = (response.choices[0].message.content or "").strip()
+    fallback = build_bug_next_action_from_chunks_fallback(retrieved_chunks)
+    if not text:
+        return fallback
+    if should_reject_bug_next_action(text):
+        if log_step:
+            log_step("bug_next_action_filtered", "Filtered non-manual/non-actionable bug next action. Using chunk-based fallback.")
+        return fallback
+    return text
+
+
+def build_bug_next_action_from_chunks_fallback(retrieved_chunks: List[Dict[str, str]]) -> str:
+    if not retrieved_chunks:
+        return "no suggested action"
+
+    preferred = next(
+        (chunk for chunk in retrieved_chunks if str(chunk.get("id", "")).upper().startswith("KB_CLIENT_")),
+        retrieved_chunks[0],
+    )
+    text = str(preferred.get("text", "")).strip()
     if not text:
         return "no suggested action"
-    return text
+
+    lower = text.lower()
+    if "customers should" in lower:
+        idx = lower.find("customers should")
+        steps = text[idx + len("customers should") :].strip().lstrip(":,- ").rstrip(". ")
+        if steps:
+            return f"Ask the customer to {steps}."
+
+    if "support should" in lower:
+        idx = lower.find("support should")
+        steps = text[idx + len("support should") :].strip().lstrip(":,- ").rstrip(". ")
+        if steps:
+            return f"Support should {steps}."
+
+    first_sentence = text.split(".")[0].strip()
+    if not first_sentence:
+        return "no suggested action"
+    return first_sentence if first_sentence.endswith(".") else f"{first_sentence}."
+
+
+def should_reject_bug_next_action(text: str) -> bool:
+    lowered = str(text or "").lower()
+    banned_patterns = [
+        "ticket draft",
+        "create ticket",
+        "open ticket",
+        "triage",
+        "queue",
+        "escalat",
+        "workspace id",
+        "account id",
+        "client id",
+        "screenshot",
+        "error id",
+        "logs",
+        "log files",
+        "ask the customer for",
+        "ask customer for",
+        "request the customer provide",
+    ]
+    return any(pattern in lowered for pattern in banned_patterns)
 
 
 def apply_route_specific_suggested_action(
