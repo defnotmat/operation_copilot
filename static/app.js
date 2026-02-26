@@ -225,12 +225,14 @@ function renderTicketOutcome(ticket) {
 }
 
 function renderTaskOutcome(task, extraction) {
+  const taskTitle = task.title || extraction.summary || "No summary";
   return `
     <div class="template-card task-template">
       <div class="template-top">
         <span class="template-kicker">Feature Task Sheet</span>
         <span class="template-id">${escapeHtml(task.task_id || "FEAT-UNKNOWN")}</span>
       </div>
+      <h3>${escapeHtml(taskTitle)}</h3>
       <table class="task-table">
         <tr><th>Workspace</th><td>${escapeHtml(task.workspace || "-")}</td></tr>
         <tr><th>Status</th><td>${escapeHtml(task.status || "-")}</td></tr>
