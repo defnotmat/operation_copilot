@@ -345,11 +345,21 @@ def build_feature_task_sheet(selected_message: Dict[str, Any], extraction: Dict[
 
 def route_and_enrich(
     selected_message: Dict[str, Any],
-    extraction: Dict[str, Any],
     log_step: Optional[Any] = None,
 ) -> Dict[str, Any]:
     client = get_openai_client()
     model = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
+
+    extraction_prompt = build_extraction_prompt(selected_message, EXTRACTION_SCHEMA)
+    if log_step:
+        log_step("classification_prompt_ready", "Structured extraction prompt prepared.")
+        log_step("classification_llm_start", f"Calling model: {model}")
+    extracted = llm_json(client, model, SYSTEM_PROMPT, extraction_prompt)
+    if log_step:
+        log_step("classification_llm_done", "Structured extraction received.")
+    extraction = validate_extraction(extracted)
+    if log_step:
+        log_step("classification_schema_check_done", "Extraction schema validated.")
 
     req_type = normalize_request_type(extraction.get("request_type") or selected_message.get("request_type"))
     if req_type not in {"bug_report", "feature_request", "question"}:
@@ -364,6 +374,7 @@ def route_and_enrich(
             "manual_chunks": [],
             "outcome_type": "task_sheet",
             "outcome": build_feature_task_sheet(selected_message, extraction),
+            "model": model,
         }
 
     text = str(selected_message.get("message", ""))
@@ -381,6 +392,7 @@ def route_and_enrich(
                 "manual_chunks": [],
                 "outcome_type": "ticket_entry",
                 "outcome": build_bug_ticket_entry(selected_message, extraction),
+                "model": model,
             }
 
         reply_payload = {
@@ -397,6 +409,7 @@ def route_and_enrich(
             "manual_chunks": [],
             "outcome_type": "reply_draft",
             "outcome": reply_payload,
+            "model": model,
         }
 
     system_prompt, user_prompt = build_route_prompt(req_type, selected_message, extraction, chunks)
@@ -413,6 +426,7 @@ def route_and_enrich(
             "manual_chunks": chunks,
             "outcome_type": "ticket_entry",
             "outcome": out,
+            "model": model,
         }
 
     reply = str(routed.get("reply_draft", "")).strip() or "No information found."
@@ -433,27 +447,13 @@ def route_and_enrich(
         "manual_chunks": chunks,
         "outcome_type": "reply_draft",
         "outcome": reply_payload,
+        "model": model,
     }
 
 
 def run_pipeline(payload: Dict[str, Any], log_step: Optional[Any] = None) -> Dict[str, Any]:
     selected_message = resolve_input(payload)
-
-    client = get_openai_client()
-    model = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
-
-    extraction_prompt = build_extraction_prompt(selected_message, EXTRACTION_SCHEMA)
-    if log_step:
-        log_step("classification_prompt_ready", "Structured extraction prompt prepared.")
-        log_step("classification_llm_start", f"Calling model: {model}")
-    extracted = llm_json(client, model, SYSTEM_PROMPT, extraction_prompt)
-    if log_step:
-        log_step("classification_llm_done", "Structured extraction received.")
-    extraction = validate_extraction(extracted)
-    if log_step:
-        log_step("classification_schema_check_done", "Extraction schema validated.")
-
-    routed = route_and_enrich(selected_message, extraction, log_step=log_step)
+    routed = route_and_enrich(selected_message, log_step=log_step)
 
     return {
         "input": selected_message,
@@ -462,7 +462,7 @@ def run_pipeline(payload: Dict[str, Any], log_step: Optional[Any] = None) -> Dic
         "outcome_type": routed["outcome_type"],
         "outcome": routed["outcome"],
         "manual_chunks": routed.get("manual_chunks", []),
-        "model": model,
+        "model": routed["model"],
     }
 
 
