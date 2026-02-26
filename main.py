@@ -2,6 +2,7 @@ import json
 import os
 from pathlib import Path
 from typing import Any, Dict, List, Optional
+from storage import init_db, insert_event
 
 from flask import Flask, jsonify, render_template, request
 from keyword_retrieval.retrieval import (
@@ -29,6 +30,8 @@ SCHEMA_PATH = ASSETS_DIR / "extraction_schema.json"
 ENV_PATH = BASE_DIR / ".env"
 PROMPT_PATH = ASSETS_DIR / "prompt.json"
 MANUAL_JSON_PATH = ASSETS_DIR / "manual.json"
+
+init_db()
 
 app = Flask(__name__)
 
@@ -518,6 +521,18 @@ def extract() -> Any:
             )
 
         add_log("pipeline_complete", "Request processed with route-specific outcome.")
+
+        if request_type in {"bug_report", "feature_request"}:
+            insert_event(
+                selected_message=selected_message,
+                extraction=extracted,
+                outcome_type=outcome_type,
+                outcome=outcome_payload,
+                manual_chunks=manual_chunks,
+            )
+            add_log("event_saved", "Saved bug/feature event to support_events.db for Streamlit dashboard.")
+        else:
+            add_log("event_skipped", "Skipped DB event save for non-dashboard request type.")
 
         return jsonify(
             {
