@@ -171,7 +171,8 @@ h2 {
 
 .message-card,
 .output,
-.mini-steps {
+.mini-steps,
+.logs-output {
   border: 1px solid rgba(149, 164, 255, 0.22);
   border-radius: 12px;
   padding: 12px;
@@ -184,6 +185,27 @@ h2 {
 
 .output {
   min-height: 200px;
+}
+
+.logs-panel {
+  margin-top: 14px;
+}
+
+.logs-output {
+  min-height: auto;
+  padding: 10px 12px;
+}
+
+.logs-output .block {
+  margin-bottom: 0;
+}
+
+.logs-output .raw-json-head {
+  margin-bottom: 0;
+}
+
+.logs-output .collapsible-content {
+  margin-top: 8px;
 }
 
 .message-meta {
@@ -271,7 +293,8 @@ h2 {
 }
 
 .output.empty,
-.message-card.empty {
+.message-card.empty,
+.logs-output.empty {
   color: #97a4d0;
 }
 
@@ -513,6 +536,51 @@ h3 {
   overflow-wrap: anywhere;
 }
 
+.pipeline-log-grid {
+  display: grid;
+  gap: 6px;
+}
+
+.pipeline-log-row {
+  display: grid;
+  grid-template-columns: 56px minmax(190px, 260px) minmax(0, 1fr);
+  border: 1px solid rgba(132, 150, 192, 0.3);
+  border-radius: 8px;
+  background: rgba(12, 17, 40, 0.72);
+}
+
+.pipeline-log-row-head {
+  border-color: rgba(126, 243, 204, 0.42);
+  background: rgba(21, 47, 39, 0.52);
+}
+
+.pipeline-log-cell {
+  padding: 8px 10px;
+  font-size: 0.79rem;
+  line-height: 1.4;
+  color: #e8f0ff;
+  border-right: 1px solid rgba(132, 150, 192, 0.25);
+  overflow-wrap: anywhere;
+}
+
+.pipeline-log-row-head .pipeline-log-cell {
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  font-size: 0.68rem;
+  font-weight: 700;
+  color: #b7ffeb;
+}
+
+.pipeline-log-cell:last-child {
+  border-right: none;
+}
+
+.pipeline-log-cell-index {
+  text-align: center;
+  color: #cfe4ff;
+  font-weight: 700;
+}
+
 .raw-json-head {
   display: flex;
   align-items: center;
@@ -627,6 +695,10 @@ pre {
     min-height: 150px;
   }
 
+  .logs-output {
+    min-height: auto;
+  }
+
   .mini-steps {
     min-height: auto;
   }
@@ -637,5 +709,18 @@ pre {
 
   .kv-grid {
     grid-template-columns: 1fr;
+  }
+
+  .pipeline-log-row {
+    grid-template-columns: 1fr;
+  }
+
+  .pipeline-log-cell {
+    border-right: none;
+    border-bottom: 1px solid rgba(132, 150, 192, 0.2);
+  }
+
+  .pipeline-log-cell:last-child {
+    border-bottom: none;
   }
 }

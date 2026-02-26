@@ -4,6 +4,7 @@ const runBtnEl = document.getElementById("runBtn");
 const messageCardEl = document.getElementById("messageCard");
 const miniStepsEl = document.getElementById("miniSteps");
 const outputEl = document.getElementById("output");
+const pipelineLogsEl = document.getElementById("pipelineLogs");
 
 const state = {
   schema: null,
@@ -137,6 +138,43 @@ function renderCollapsibleBlock(title, targetId, content, wide = false) {
       <div id="${safeTargetId}" class="collapsible-content collapsed">${content}</div>
     </div>
   `;
+}
+
+function buildPipelineLogGrid(logs) {
+  return `
+    <div class="pipeline-log-grid">
+      <div class="pipeline-log-row pipeline-log-row-head">
+        <div class="pipeline-log-cell pipeline-log-cell-index">#</div>
+        <div class="pipeline-log-cell">Step</div>
+        <div class="pipeline-log-cell">Detail</div>
+      </div>
+      ${logs
+        .map((entry, index) => {
+          const safeStep = escapeHtml(entry?.step || "unknown_step");
+          const safeDetail = escapeHtml(entry?.detail || "");
+          return `
+            <div class="pipeline-log-row">
+              <div class="pipeline-log-cell pipeline-log-cell-index">${index + 1}</div>
+              <div class="pipeline-log-cell">${safeStep}</div>
+              <div class="pipeline-log-cell">${safeDetail}</div>
+            </div>
+          `;
+        })
+        .join("")}
+    </div>
+  `;
+}
+
+function renderPipelineLogs(logs) {
+  const entries = Array.isArray(logs) ? logs : [];
+  const logContent = entries.length
+    ? buildPipelineLogGrid(entries)
+    : "<p class=\"block-body\">No logs yet. Run the pipeline to see full trace logs.</p>";
+
+  if (!pipelineLogsEl) return;
+
+  pipelineLogsEl.classList.toggle("empty", !entries.length);
+  pipelineLogsEl.innerHTML = renderCollapsibleBlock("All Logs", "pipeline-logs-view", logContent, true);
 }
 
 function buildChunkContext(groundingChunkIds, manualChunks) {
@@ -328,13 +366,6 @@ function renderOutput(data) {
       </div>
       `
       )}
-
-      ${renderCollapsibleBlock(
-        "Raw Extraction JSON",
-        "raw-json-view",
-        `<pre class="raw-json-pre">${escapeHtml(JSON.stringify({ outcome_type: outcomeType, outcome }, null, 2))}</pre>`,
-        true
-      )}
     </div>
   `;
 }
@@ -354,6 +385,7 @@ async function runPipeline() {
 
   outputEl.classList.add("empty");
   outputEl.textContent = "Running...";
+  renderPipelineLogs([]);
 
   runBtnEl.disabled = true;
   try {
@@ -375,6 +407,7 @@ async function runPipeline() {
     if (!response.ok) {
       renderMiniSteps(2, "error", data.error || "Could not finish this run.");
       renderError(data.error || "Could not finish this run.");
+      renderPipelineLogs(data.pipeline_logs);
       return;
     }
 
@@ -383,10 +416,12 @@ async function runPipeline() {
     await delay(STEP_TRANSITION_MS);
 
     renderOutput(data);
+    renderPipelineLogs(data.pipeline_logs);
     renderMiniSteps(4, "done", "Outcome ready.");
   } catch (error) {
     renderMiniSteps(2, "error", "Something interrupted the request. Please try again.");
     renderError("Something interrupted the request. Please try again.");
+    renderPipelineLogs([]);
   } finally {
     runBtnEl.disabled = false;
   }
@@ -394,6 +429,7 @@ async function runPipeline() {
 
 async function init() {
   renderMiniSteps(0, "idle", "Loading demo data.");
+  renderPipelineLogs([]);
 
   try {
     const [schemaRes, messagesRes] = await Promise.all([
@@ -454,14 +490,14 @@ sampleMessageEl.addEventListener("change", () => {
   renderMiniSteps(0, "idle", `Selected sample ${sampleMessageLabel(messageForSelection(requestType, sampleMessageEl.value) || {})}.`);
 });
 
-outputEl.addEventListener("click", (event) => {
+document.addEventListener("click", (event) => {
   const toggleBtn = event.target.closest(".json-toggle-btn");
   if (!toggleBtn) return;
 
   const targetId = toggleBtn.getAttribute("data-target");
   if (!targetId) return;
 
-  const targetEl = outputEl.querySelector(`#${targetId}`);
+  const targetEl = document.getElementById(targetId);
   if (!targetEl) return;
 
   const isCollapsed = targetEl.classList.toggle("collapsed");
