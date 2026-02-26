@@ -14,5 +14,5 @@ It includes:
 ### Key Features
 - Schema-constrained extraction (`request_type`, `priority`, `summary`, `next action`, `missing questions`)
 - Hallucination reduction via manual chunk retrieval (`top 3` chunk IDs + text in prompt)
-- Local knowledge assets in `support_knowledge_base/`
+- Local knowledge assets in `knowledge_base/`
 - Simple, inspectable architecture for demos and iteration

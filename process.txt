@@ -3,7 +3,7 @@
 - Feature -> task sheet output
 - Question -> grounded reply draft output
 
-2. Refactored retrieval logic into `chunk/chunk.py`:
+2. Refactored retrieval logic into `keyword_retrieval/retrieval.py`:
 - Centralized tokenization, normalization, overlap scoring, chunk formatting
 - Kept `main.py` focused on extraction + routing orchestration
 

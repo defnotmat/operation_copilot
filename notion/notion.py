@@ -4,18 +4,10 @@ import requests
 
 
 def _notion_title(text: str) -> Dict[str, Any]:
-    return {
-        "title": [
-            {
-                "type": "text",
-                "text": {"content": text},
-            }
-        ]
-    }
+    return { "title": [{ "type": "text","text": {"content": text},}]}
 
 
 def _notion_rich_text(text: str) -> Dict[str, Any]:
-    # Notion "rich_text" property expects a list of rich-text objects
     return {"rich_text": [{"type": "text", "text": {"content": text}}]}
 
 
@@ -48,7 +40,6 @@ def send_feature_request_to_notion(
     priority_obj = extraction.get("priority")
     priority = priority_obj if isinstance(priority_obj, dict) else {}
     priority_level = str(task_sheet.get("priority", priority.get("level", "P2"))).strip() or "P2"
-
     ticket_id = str(task_sheet.get("ticket_id", task_sheet.get("task_id", "")))
     triage_rationale = str(task_sheet.get("triage_rationale", priority.get("rationale", "")))
     next_internal_action = str(task_sheet.get("next_internal_action", extraction.get("suggested_next_action", "")))
@@ -90,8 +81,9 @@ def send_feature_request_to_notion(
             timeout=15,  # prevent hanging
         )
 
-        print("🔵 NOTION STATUS:", response.status_code)
-        print("🔵 NOTION RESPONSE:", response.text)
+        print("NOTION STATUS:", response.status_code)
+        print("NOTION RESPONSE:", response.text)
+
         # Raise HTTPError for 4xx/5xx
         response.raise_for_status()
 
@@ -110,7 +102,7 @@ def send_feature_request_to_notion(
             "notion_url": data.get("url", ""),
         }
 
-    # --- HTTP errors (4xx / 5xx from Notion) ---
+
     except requests.exceptions.HTTPError as http_err:
         detail = ""
         try:

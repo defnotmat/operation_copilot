@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from flask import Flask, jsonify, render_template, request
-from chunk.chunk import (
+from keyword_retrieval.retrieval import (
     build_manual_chunk_index,
     format_manual_context,
     load_manual_json_chunks,
@@ -23,7 +23,7 @@ except Exception:
     load_dotenv = None
 
 BASE_DIR = Path(__file__).resolve().parent
-ASSETS_DIR = BASE_DIR / "support_knowledge_base"
+ASSETS_DIR = BASE_DIR / "knowledge_base"
 MESSAGES_PATH = ASSETS_DIR / "messages.json"
 SCHEMA_PATH = ASSETS_DIR / "extraction_schema.json"
 ENV_PATH = BASE_DIR / ".env"
@@ -117,11 +117,7 @@ def find_message(
 
 
 def resolve_input(payload: Dict[str, Any]) -> Dict[str, Any]:
-    # Supports frontend payloads like:
-    # 1) {"request_type": "bug_report", "id": "bug_001"}
-    # 2) {"id": "bug_001"}
-    # 3) {"selected": {...full object...}}
-    # 4) direct full object in payload
+
     selected = payload.get("selected") if isinstance(payload.get("selected"), dict) else payload
 
     request_type = selected.get("request_type")
