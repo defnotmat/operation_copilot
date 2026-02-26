@@ -250,6 +250,7 @@ function renderReplyOutcome(reply, extraction) {
   const priorityLevel = extraction?.priority?.level || "";
   const priorityRationale = extraction?.priority?.rationale || "no information found";
   const priorityWithLevel = priorityLevel ? `${priorityLevel} - ${priorityRationale}` : priorityRationale;
+  const replyText = reply.reply || "";
   if (reply.no_information_found) {
     return `
       <div class="template-card reply-template">
@@ -257,7 +258,7 @@ function renderReplyOutcome(reply, extraction) {
           <span class="template-kicker">Customer Reply Draft</span>
           <span class="template-id">${escapeHtml(reply.message_id || "Q-UNKNOWN")}</span>
         </div>
-        <p class="reply-text">${escapeHtml(reply.reply_draft || "Information you are looking for is not found in the manual.")}</p>
+        <p class="reply-text">${escapeHtml(replyText || "Information you are looking for is not found in the manual.")}</p>
         <div class="kv-grid">
           <div class="kv-wide"><span>Priority Rationale</span><strong class="kv-value">${escapeHtml(priorityWithLevel)}</strong></div>
         </div>
@@ -271,7 +272,7 @@ function renderReplyOutcome(reply, extraction) {
         <span class="template-kicker">Customer Reply Draft</span>
         <span class="template-id">${escapeHtml(reply.message_id || "Q-UNKNOWN")}</span>
       </div>
-      <p class="reply-text">${escapeHtml(reply.reply_draft || "No draft generated.")}</p>
+      <p class="reply-text">${escapeHtml(replyText || "No draft generated.")}</p>
       <div class="kv-grid">
         <div class="kv-wide"><span>Priority Rationale</span><strong class="kv-value">${escapeHtml(priorityWithLevel)}</strong></div>
       </div>

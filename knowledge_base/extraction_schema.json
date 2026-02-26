@@ -5,6 +5,7 @@
     "rationale": "string"
   },
   "summary": "string",
+  "reply": "string",
   "suggested_next_action": "string",
   "missing_info_questions": ["string"]
 }

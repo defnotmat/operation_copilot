@@ -263,39 +263,44 @@ def validate_extraction(extraction: Dict[str, Any]) -> Dict[str, Any]:
 
 def build_route_prompt(
     req_type: str,
-    selected_message: Dict[str, Any],
-    extraction: Dict[str, Any],
+    extraction_prompt: str,
     chunks: List[Dict[str, str]],
 ) -> tuple[str, str]:
     """Returns (system_prompt, user_prompt) for the route-specific LLM call."""
     manual_context = format_manual_context(chunks)
 
     if req_type == "question":
-        system = QUESTION_REPLY_SYSTEM_PROMPT
+        system = ( f"{SYSTEM_PROMPT}\n\n"
+                    f"{QUESTION_REPLY_SYSTEM_PROMPT}\n\n"
+                    ).strip()
         user = (
-            "Customer message:\n"
-            f"{json.dumps(selected_message, ensure_ascii=True)}\n\n"
-            "Structured extraction:\n"
-            f"{json.dumps(extraction, ensure_ascii=True)}\n\n"
+           "Structured extraction:\n"
+            f"{extraction_prompt}\n\n"
             "Manual chunks (ground truth):\n"
             f"{manual_context}\n\n"
-            'Return JSON with keys: {"reply_draft":"string","grounding_chunk_ids":["string"]}\n'
-            "Use only facts from manual chunks. If not answered, reply_draft must be: No information found."
         )
         return system, user
 
     if req_type == "bug_report":
-        system = BUG_NEXT_ACTION_SYSTEM_PROMPT
+        system =  ( f"{SYSTEM_PROMPT}\n\n"
+                    f"{BUG_NEXT_ACTION_SYSTEM_PROMPT}\n\n"
+                    ).strip()
+
         user = (
-            "Customer bug message:\n"
-            f"{str(selected_message.get('message', '')).strip()}\n\n"
+            "Structured extraction:\n"
+            f"{extraction_prompt}\n\n"
             "Relevant manual chunks:\n"
             f"{manual_context}\n\n"
-            'Return JSON: {"suggested_next_action":"string"}\n'
-            "Only use troubleshooting actions from chunks. "
-            "No escalation/ticket language. No asking for IDs/screenshots/logs. "
-            'If none, suggested_next_action must be: "no suggested action"'
         )
+        return system, user
+
+    if req_type == "feature_request":
+        system = SYSTEM_PROMPT
+        user = (
+            "Structured extraction:\n"
+            f"{extraction_prompt}\n\n"
+        )
+
         return system, user
 
     raise ValueError(f"Unsupported request type for route prompt: {req_type}")
@@ -337,7 +342,7 @@ def build_feature_task_sheet(selected_message: Dict[str, Any], extraction: Dict[
         "requester": selected_message.get("sender", "unknown"),
         "source": selected_message.get("source", "unknown"),
         "problem_statement": selected_message.get("message", ""),
-        "proposed_next_step": extraction.get("suggested_next_action", "no information found"),
+        "proposed_next_step": extraction.get("suggested_next_action", "No information found"),
         "discovery_questions": missing if isinstance(missing, list) else "All information is present",
         "tags": ["customer-feedback", str(selected_message.get("source", "unknown"))],
     }
@@ -354,96 +359,52 @@ def route_and_enrich(
     if log_step:
         log_step("classification_prompt_ready", "Structured extraction prompt prepared.")
         log_step("classification_llm_start", f"Calling model: {model}")
-    extracted = llm_json(client, model, SYSTEM_PROMPT, extraction_prompt)
-    if log_step:
-        log_step("classification_llm_done", "Structured extraction received.")
-    extraction = validate_extraction(extracted)
-    if log_step:
-        log_step("classification_schema_check_done", "Extraction schema validated.")
 
-    req_type = normalize_request_type(extraction.get("request_type") or selected_message.get("request_type"))
-    if req_type not in {"bug_report", "feature_request", "question"}:
-        req_type = "question"
-    extraction["request_type"] = req_type
-
-    if req_type == "feature_request":
-        extraction["suggested_next_action"] = FEATURE_FOLLOWUP_ACTION
-        return {
-            "request_type": req_type,
-            "extraction": extraction,
-            "manual_chunks": [],
-            "outcome_type": "task_sheet",
-            "outcome": build_feature_task_sheet(selected_message, extraction),
-            "model": model,
-        }
-
+    req_type = str(selected_message.get("request_type", "question"))
     text = str(selected_message.get("message", ""))
     chunks = retrieve_manual_chunks_for_text(text, top_k=3)
+
     if log_step:
         ids = ", ".join([chunk.get("id", "UNKNOWN") for chunk in chunks]) or "none"
         log_step("manual_retrieval_done", f"Retrieved manual chunks: {ids}")
 
-    if not chunks:
-        if req_type == "bug_report":
-            extraction["suggested_next_action"] = "no suggested action"
-            return {
-                "request_type": req_type,
-                "extraction": extraction,
-                "manual_chunks": [],
-                "outcome_type": "ticket_entry",
-                "outcome": build_bug_ticket_entry(selected_message, extraction),
-                "model": model,
-            }
-
-        reply_payload = {
-            "to": selected_message.get("sender", "unknown"),
-            "channel": selected_message.get("source", "unknown"),
-            "message_id": selected_message.get("id", "unknown"),
-            "reply_draft": "No information found.",
-            "grounding_chunk_ids": [],
-            "no_information_found": True,
-        }
-        return {
-            "request_type": "question",
-            "extraction": extraction,
-            "manual_chunks": [],
-            "outcome_type": "reply_draft",
-            "outcome": reply_payload,
-            "model": model,
-        }
-
-    system_prompt, user_prompt = build_route_prompt(req_type, selected_message, extraction, chunks)
+    system_prompt, user_prompt = build_route_prompt(req_type, extraction_prompt, chunks)
     routed = llm_json(client, model, system_prompt, user_prompt)
 
     if req_type == "bug_report":
-        suggested = str(routed.get("suggested_next_action", "")).strip() or "no suggested action"
-        extraction["suggested_next_action"] = suggested
-        out = build_bug_ticket_entry(selected_message, extraction)
+        out = build_bug_ticket_entry(selected_message, routed)
         out["grounding_chunk_ids"] = [chunk.get("id", "UNKNOWN") for chunk in chunks]
         return {
             "request_type": req_type,
-            "extraction": extraction,
+            "extraction": routed,
             "manual_chunks": chunks,
             "outcome_type": "ticket_entry",
             "outcome": out,
             "model": model,
         }
 
-    reply = str(routed.get("reply_draft", "")).strip() or "No information found."
+    reply = str(
+        routed.get("reply") or "").strip()
+    if not reply:
+        reply = "No information found."
+
+    no_info = reply.lower().rstrip(".") == "no information found"
     grounding = routed.get("grounding_chunk_ids")
-    if not isinstance(grounding, list) or not grounding:
+    if no_info:
+        grounding = []
+    elif not isinstance(grounding, list) or not grounding:
         grounding = [chunk.get("id", "UNKNOWN") for chunk in chunks]
     reply_payload = {
         "to": selected_message.get("sender", "unknown"),
         "channel": selected_message.get("source", "unknown"),
         "message_id": selected_message.get("id", "unknown"),
-        "reply_draft": reply,
+        "reply": reply,
         "grounding_chunk_ids": [str(item) for item in grounding],
-        "no_information_found": reply.strip().lower() == "no information found.",
+        "no_information_found": no_info,
     }
     return {
         "request_type": "question",
-        "extraction": extraction,
+        "extraction": routed,
         "manual_chunks": chunks,
         "outcome_type": "reply_draft",
         "outcome": reply_payload,
@@ -522,17 +483,17 @@ def extract() -> Any:
 
         add_log("pipeline_complete", "Request processed with route-specific outcome.")
 
-        if request_type in {"bug_report", "feature_request"}:
-            insert_event(
-                selected_message=selected_message,
-                extraction=extracted,
-                outcome_type=outcome_type,
-                outcome=outcome_payload,
-                manual_chunks=manual_chunks,
-            )
-            add_log("event_saved", "Saved bug/feature event to support_events.db for Streamlit dashboard.")
-        else:
-            add_log("event_skipped", "Skipped DB event save for non-dashboard request type.")
+       # if request_type in {"bug_report", "feature_request"}:
+       #    insert_event(
+       #      selected_message=selected_message,
+       #         extraction=extracted,
+       #         outcome_type=outcome_type,
+       #         outcome=outcome_payload,
+       #         manual_chunks=manual_chunks,
+       #     )
+       #     add_log("event_saved", "Saved bug/feature event to support_events.db for Streamlit dashboard.")
+       # else:
+       #     add_log("event_skipped", "Skipped DB event save for non-dashboard request type.")
 
         return jsonify(
             {
