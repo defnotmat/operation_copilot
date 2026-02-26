@@ -413,6 +413,7 @@ def route_and_enrich(
 
 
 def run_pipeline(payload: Dict[str, Any], log_step: Optional[Any] = None) -> Dict[str, Any]:
+    print(payload)
     selected_message = resolve_input(payload)
     routed = route_and_enrich(selected_message, log_step=log_step)
 
