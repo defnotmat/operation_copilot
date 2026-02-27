@@ -6,7 +6,6 @@ from storage import init_db, insert_event
 
 from flask import Flask, jsonify, render_template, request
 from keyword_retrieval.retrieval import (
-    build_manual_chunk_index,
     format_manual_context,
     load_manual_json_chunks,
     retrieve_top_manual_chunks,
@@ -73,9 +72,8 @@ PROMPTS = load_json(PROMPT_PATH)
 SYSTEM_PROMPT = str(PROMPTS.get("default_system_prompt", "")).strip()
 MESSAGES_DB = load_json(MESSAGES_PATH)
 
-# Preparing search engine once at startup so every later query is fast.
+# Load manual chunks once at startup.
 MANUAL_JSON_CHUNKS = load_manual_json_chunks(MANUAL_JSON_PATH)
-MANUAL_CHUNK_INDEX = build_manual_chunk_index(MANUAL_JSON_CHUNKS)
 load_env_file()
 
 
@@ -230,13 +228,12 @@ def normalize_request_type(value: Any) -> str:
     return aliases.get(token, token)
 
 
-def retrieve_manual_chunks_for_text(text: str, top_k: int = 3) -> List[Dict[str, str]]:
+def retrieve_manual_chunks_for_text(text: str, top_k: int = 3) -> List[Dict[str, Any]]:
     return retrieve_top_manual_chunks(
         text,
         MANUAL_JSON_CHUNKS,
         top_k=top_k,
         require_overlap=True,
-        chunk_index=MANUAL_CHUNK_INDEX,
     )
 
 
