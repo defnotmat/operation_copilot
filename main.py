@@ -349,7 +349,6 @@ def route_and_enrich(
     selected_message: Dict[str, Any],
     log_step: Optional[Any] = None,
 ) -> Dict[str, Any]:
-    client = get_openai_client()
     model = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
 
     extraction_prompt = build_extraction_prompt(selected_message, EXTRACTION_SCHEMA)
@@ -372,6 +371,35 @@ def route_and_enrich(
         else:
             log_step("manual_retrieval_skipped", "Feature request route does not require manual retrieval.")
 
+    if req_type == "question" and not chunks:
+        if log_step:
+            log_step("question_no_manual_match", "No manual chunks matched. Returning deterministic no-information reply.")
+        routed = {
+            "request_type": "question",
+            "priority": {"level": "", "rationale": "No information found"},
+            "summary": "",
+            "reply": "No information found.",
+            "suggested_next_action": "",
+            "missing_info_questions": [],
+        }
+        reply_payload = {
+            "to": selected_message.get("sender", "unknown"),
+            "channel": selected_message.get("source", "unknown"),
+            "message_id": selected_message.get("id", "unknown"),
+            "reply": "No information found.",
+            "grounding_chunk_ids": [],
+            "no_information_found": True,
+        }
+        return {
+            "request_type": req_type,
+            "extraction": routed,
+            "manual_chunks": [],
+            "outcome_type": "reply_draft",
+            "outcome": reply_payload,
+            "model": model,
+        }
+
+    client = get_openai_client()
     system_prompt, user_prompt = build_route_prompt(req_type, extraction_prompt, chunks)
     routed = llm_json(client, model, system_prompt, user_prompt)
 
