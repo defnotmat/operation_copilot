@@ -357,13 +357,20 @@ def route_and_enrich(
         log_step("classification_prompt_ready", "Structured extraction prompt prepared.")
         log_step("classification_llm_start", f"Calling model: {model}")
 
-    req_type = str(selected_message.get("request_type", "question"))
+    req_type = normalize_request_type(selected_message.get("request_type"))
+    if req_type not in {"bug_report", "feature_request", "question"}:
+        req_type = "question"
     text = str(selected_message.get("message", ""))
-    chunks = retrieve_manual_chunks_for_text(text, top_k=3)
+    chunks: List[Dict[str, Any]] = []
+    if req_type in {"bug_report", "question"}:
+        chunks = retrieve_manual_chunks_for_text(text, top_k=3)
 
     if log_step:
-        ids = ", ".join([chunk.get("id", "UNKNOWN") for chunk in chunks]) or "none"
-        log_step("manual_retrieval_done", f"Retrieved manual chunks: {ids}")
+        if req_type in {"bug_report", "question"}:
+            ids = ", ".join([chunk.get("id", "UNKNOWN") for chunk in chunks]) or "none"
+            log_step("manual_retrieval_done", f"Retrieved manual chunks: {ids}")
+        else:
+            log_step("manual_retrieval_skipped", "Feature request route does not require manual retrieval.")
 
     system_prompt, user_prompt = build_route_prompt(req_type, extraction_prompt, chunks)
     routed = llm_json(client, model, system_prompt, user_prompt)
@@ -376,6 +383,19 @@ def route_and_enrich(
             "extraction": routed,
             "manual_chunks": chunks,
             "outcome_type": "ticket_entry",
+            "outcome": out,
+            "model": model,
+        }
+
+    if req_type == "feature_request":
+        routed["request_type"] = "feature_request"
+        routed["suggested_next_action"] = FEATURE_FOLLOWUP_ACTION
+        out = build_feature_task_sheet(selected_message, routed)
+        return {
+            "request_type": req_type,
+            "extraction": routed,
+            "manual_chunks": [],
+            "outcome_type": "task_sheet",
             "outcome": out,
             "model": model,
         }
@@ -400,7 +420,7 @@ def route_and_enrich(
         "no_information_found": no_info,
     }
     return {
-        "request_type": "question",
+        "request_type": req_type,
         "extraction": routed,
         "manual_chunks": chunks,
         "outcome_type": "reply_draft",
@@ -481,17 +501,17 @@ def extract() -> Any:
 
         add_log("pipeline_complete", "Request processed with route-specific outcome.")
 
-       # if request_type in {"bug_report", "feature_request"}:
-       #    insert_event(
-       #      selected_message=selected_message,
-       #         extraction=extracted,
-       #         outcome_type=outcome_type,
-       #         outcome=outcome_payload,
-       #         manual_chunks=manual_chunks,
-       #     )
-       #     add_log("event_saved", "Saved bug/feature event to support_events.db for Streamlit dashboard.")
-       # else:
-       #     add_log("event_skipped", "Skipped DB event save for non-dashboard request type.")
+        if request_type in {"bug_report", "feature_request"}:
+           insert_event(
+                selected_message=selected_message,
+                extraction=extracted,
+                outcome_type=outcome_type,
+                outcome=outcome_payload,
+                manual_chunks=manual_chunks,
+            )
+           add_log("event_saved", "Saved bug/feature event to support_events.db for Streamlit dashboard.")
+        else:
+           add_log("event_skipped", "Skipped DB event save for non-dashboard request type.")
 
         return jsonify(
             {
